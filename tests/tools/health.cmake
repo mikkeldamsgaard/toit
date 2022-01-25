@@ -26,6 +26,12 @@ function (add_health_test PATH RELATIVE_TO LIB_DIR GOLD_DIR)
   string(REPLACE "/" "__" ESCAPED "${ESCAPED}")
   set(GOLD "${GOLD_DIR}/${ESCAPED}.gold")
 
+  message("TEST: ${RELATIVE}
+  GOLD: ${GOLD}
+  LIB_DIR: ${LIB_DIR}
+  TEST_ROOT: ${RELATIVE_TO}
+  TMP: ${CMAKE_BINARY_DIR}/tmp
+  ")
   add_test(
     NAME ${TEST_NAME}
     COMMAND ${CMAKE_COMMAND}
