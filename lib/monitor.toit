@@ -149,6 +149,21 @@ monitor Channel:
     p_ = n
 
   /**
+  Tries to send a message with the $value on the channel. This operation never blocks.
+  If there are tasks blocked waiting for a value (with $receive), then one of
+    them is woken up and receives the $value.
+
+  Returns true if the message was successfully delivered to the channel. Returns false 
+    if the channel is full and the message was not delivered
+  */
+  try_send value -> bool:
+    n := (p_ + 1) % buffer_.size
+    if c_ == n: return false
+    buffer_[p_] = value
+    p_ = n
+    return true
+
+  /**
   Receives a message from the channel.
   If no message is ready, and $blocking is true, blocks until another tasks
     sends a message through $send.
@@ -246,13 +261,15 @@ monitor ResourceState_:
       group_ = null
       remove_finalizer this
 
-  // Called when the state changes because of the call to
-  // [register_object_notifier] in the constructor.
+  // Called on timeouts and when the state changes because of the call
+  // to [register_object_notifier] in the constructor.
   notify_:
-    if not resource_: return
-    state := read_state_ group_ resource_
-    state_ |= state
-    // TODO(kasper): Only notify if we added new bits?
+    resource := resource_
+    if resource:
+      state := read_state_ group_ resource
+      state_ |= state
+    // Always call the super implementation to avoid getting
+    // into a situation, where timeouts might be ignored.
     super
 
   wait_for_state_ bits:
