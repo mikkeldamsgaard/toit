@@ -44,7 +44,11 @@ Process::Process(Program* program, ProcessRunner* runner, ProcessGroup* group, S
     , _entry(Method::invalid())
     , _hatch_method(Method::invalid())
     , _hatch_arguments(null)
+#ifdef LEGACY_GC
     , _object_heap(program, this, initial_block)
+#else
+    , _object_heap(program, this)
+#endif
     , _memory_usage(Usage("initial object heap"))
     , _last_bytes_allocated(0)
     , _termination_message(termination)
@@ -294,7 +298,7 @@ void Process::send_mail(Message* message) {
 void Process::_ensure_random_seeded() {
   if (_random_seeded) return;
   uint8 seed[16];
-  VM::current()->entropy_mixer()->get_entropy(seed, sizeof(seed));
+  EntropyMixer::instance()->get_entropy(seed, sizeof(seed));
   random_seed(seed, sizeof(seed));
   _random_seeded = true;
 }
