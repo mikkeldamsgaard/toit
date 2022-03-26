@@ -58,6 +58,8 @@ include_directories(
   $ENV{IDF_PATH}/components/esp_timer/include
   $ENV{IDF_PATH}/components/esp_wifi/include
   $ENV{IDF_PATH}/components/freertos/include
+  $ENV{IDF_PATH}/components/freertos/include/esp_additions/freertos
+
   $ENV{IDF_PATH}/components/freertos/xtensa/include
   $ENV{IDF_PATH}/components/freertos/port/xtensa/include
   $ENV{IDF_PATH}/components/hal/include
