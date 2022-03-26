@@ -26,6 +26,8 @@
 #include <typeinfo>
 #endif
 
+#define TOIT_GC_LOGGING
+
 // Use semispace non-generational GC.
 #define LEGACY_GC 1
 

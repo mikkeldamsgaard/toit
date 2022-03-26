@@ -28,6 +28,8 @@
 
 #ifdef CONFIG_IDF_TARGET_ESP32C3
   #include <esp32c3/rom/ets_sys.h>
+#elif CONFIG_IDF_TARGET_ESP32S3
+#include <esp32s3/rom/ets_sys.h>
 #else
   #include <esp32/rom/ets_sys.h>
 #endif
@@ -37,6 +39,8 @@
 extern "C" {
 #ifdef CONFIG_IDF_TARGET_ESP32C3
   #include <esp32c3/clk.h>
+#elif CONFIG_IDF_TARGET_ESP32S3
+  #include <esp32s3/clk.h>
 #else
   #include <esp32/clk.h>
 #endif
@@ -123,8 +127,10 @@ static void reset_rtc(const char* reason) {
   // We only clear RTC on boot, so this must be exactly 1.
   rtc.boot_count = 1;
   // Clear real-time clock.
+#ifndef CONFIG_IDF_TARGET_ESP32S3
   struct timespec time = { 0, 0 };
   toit::OS::set_real_time(&time);
+#endif
   // Checksum will be updated after.
   reset_after_boot = true;
 }
@@ -132,7 +138,7 @@ static void reset_rtc(const char* reason) {
 // Patch the primordial entrypoint of the image (before launching FreeRTOS).
 extern "C" void IRAM_ATTR start_cpu0() {
   if (!is_rtc_valid()) {
-    reset_rtc("RTC memory is in inconsistent state");
+    reset_rtc("RTC memory is in inconsistent state.");
   } else {
     rtc.boot_count++;
     rtc.total_deep_sleep_time += calibrated_rtc_time() - rtc.deep_sleep_time_stamp;

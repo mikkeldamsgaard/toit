@@ -27,7 +27,7 @@
 #include "../vm.h"
 
 
-#ifdef CONFIG_IDF_TARGET_ESP32C3
+#if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32S3)
     #define SPEED_MODE LEDC_LOW_SPEED_MODE
 #else
     #define SPEED_MODE LEDC_HIGH_SPEED_MODE

@@ -92,6 +92,7 @@ class I2SResource: public EventQueueResource {
   int _alignment;
 };
 
+#ifndef CONFIG_IDF_TARGET_ESP32S3
 static bool set_mclk_pin(i2s_port_t i2s_num, int io_num) {
   bool is_0 = i2s_num == I2S_NUM_0;
 
@@ -114,6 +115,7 @@ static bool set_mclk_pin(i2s_port_t i2s_num, int io_num) {
 
   return true;
 }
+#endif // CONFIG_IDF_TARGET_ESP32S3
 
 MODULE_IMPLEMENTATION(i2s, MODULE_I2S);
 
@@ -138,6 +140,10 @@ PRIMITIVE(create) {
        int, rx_pin, int, mclk_pin,
        int, sample_rate, int, bits_per_sample, int, buffer_size,
        bool, is_master, int, mclk_multiplier, bool, use_apll);
+
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+  if (mclk_pin != -1) INVALID_ARGUMENT;
+#endif
 
   int fixed_mclk = 0;
   if (mclk_pin != -1) {
@@ -173,7 +179,7 @@ PRIMITIVE(create) {
 
   i2s_config_t config = {
     .mode = static_cast<i2s_mode_t>(mode),
-    .sample_rate = sample_rate,
+    .sample_rate = (uint32_t)sample_rate,
     .bits_per_sample = static_cast<i2s_bits_per_sample_t>(bits_per_sample),
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
@@ -218,6 +224,7 @@ PRIMITIVE(create) {
     return Primitive::os_error(err, process);
   }
 
+#ifndef CONFIG_IDF_TARGET_ESP32S3
   if (mclk_pin != -1) {
     if (!set_mclk_pin(port, mclk_pin)) {
       SystemEventSource::instance()->run([&]() -> void {
@@ -227,6 +234,7 @@ PRIMITIVE(create) {
       return Primitive::os_error(err, process);
     }
   }
+#endif
 
   I2SResource* i2s = _new I2SResource(group, port, buffer_size, args.queue);
   if (!i2s) {

@@ -50,6 +50,7 @@ class EntropyMixer {
   }
 
   bool get_entropy(uint8* data, size_t size) {
+    if (_mutex == null) _mutex =OS::allocate_mutex(4, "Entropy mutex");
     Locker locker(_mutex);
     int result = mbedtls_entropy_func(&_context, data, size);
     return result == 0;
