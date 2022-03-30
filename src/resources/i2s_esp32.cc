@@ -143,6 +143,7 @@ PRIMITIVE(create) {
 
 #ifdef CONFIG_IDF_TARGET_ESP32S3
   if (mclk_pin != -1) INVALID_ARGUMENT;
+  if (use_apll) INVALID_ARGUMENT;
 #endif
 
   int fixed_mclk = 0;
