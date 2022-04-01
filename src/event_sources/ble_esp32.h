@@ -15,6 +15,8 @@
 
 #pragma once
 
+#if defined(TOIT_FREERTOS) && defined(CONFIG_BT_ENABLED)
+
 #include <functional>
 
 #include "../resource.h"
@@ -256,3 +258,5 @@ class BLEEventSource : public LazyEventSource, public Thread {
 };
 
 } // namespace toit
+
+#endif // defined(TOIT_FREERTOS) && defined(CONFIG_BT_ENABLED)

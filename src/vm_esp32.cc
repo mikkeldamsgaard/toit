@@ -39,7 +39,9 @@ void VM::load_platform_event_sources() {
   event_manager()->add_event_source(_new GPIOEventSource());
   event_manager()->add_event_source(_new EventQueueEventSource());
   event_manager()->add_event_source(_new TLSEventSource());
+#ifdef CONFIG_BT_ENABLED
   event_manager()->add_event_source(_new BLEEventSource());
+#endif
 }
 
 } // namespace toit

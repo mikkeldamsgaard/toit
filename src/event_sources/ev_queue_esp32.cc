@@ -34,7 +34,7 @@ EventQueueEventSource::EventQueueEventSource()
   xQueueAddToSet(_stop, _queue_set);
 
   // Create OS thread to handle UART.
-  spawn();
+  spawn(2*KB, 0); // Pinning to core, to discourage switching core under high load and fail and assert
 
   ASSERT(_instance == null);
   _instance = this;

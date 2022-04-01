@@ -15,7 +15,7 @@
 
 #include "../top.h"
 
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_FREERTOS) && defined(CONFIG_BT_ENABLED)
 
 #include <esp_event.h>
 
@@ -315,4 +315,4 @@ BLEServerCharacteristicResource::~BLEServerCharacteristicResource() {
 
 } // namespace toit
 
-#endif // TOIT_FREERTOS
+#endif // defined(TOIT_FREERTOS) && defined(CONFIG_BT_ENABLED)
