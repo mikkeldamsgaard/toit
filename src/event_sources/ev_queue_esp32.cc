@@ -30,11 +30,11 @@ EventQueueEventSource::EventQueueEventSource()
     : EventSource("EVQ")
     , Thread("EVQ")
     , _stop(xSemaphoreCreateBinary())
-    , _queue_set(xQueueCreateSet(32)) {
+    , _queue_set(xQueueCreateSet(68)) {
   xQueueAddToSet(_stop, _queue_set);
 
   // Create OS thread to handle UART.
-  spawn(2*KB, 0); // Pinning to core, to discourage switching core under high load and fail and assert
+  spawn(2*KB, 0); // Pinning to core, to discourage switching core under high load and fail an assert
 
   ASSERT(_instance == null);
   _instance = this;
@@ -55,24 +55,28 @@ void EventQueueEventSource::entry() {
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + EVENT_SOURCE_MALLOC_TAG);
 
   while (true) {
+    QueueSetMemberHandle_t handle;
     { Unlocker unlock(locker);
       // Wait for any queue/semaphore to wake up.
-      xQueueSelectFromSet(_queue_set, portMAX_DELAY);
+      handle = xQueueSelectFromSet(_queue_set, portMAX_DELAY);
     }
-
     // First test if we should shut down.
-    if (xSemaphoreTake(_stop, 0)) {
+    if (handle == _stop && xSemaphoreTake(_stop, 0)) {
       return;
     }
 
     // Then loop through all queues.
     for (auto r : resources()) {
       auto evq_res = static_cast<EventQueueResource*>(r);
+      if (handle != evq_res->queue()) continue;
+
       uart_event_t event;
       while (xQueueReceive(evq_res->queue(), &event, 0)) {
         dispatch(locker, r, event.type);
       }
     }
+
+
   }
 }
 
