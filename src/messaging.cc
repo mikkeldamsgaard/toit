@@ -67,10 +67,10 @@ MessageEncoder::MessageEncoder(Process* process, uint8* buffer)
     , _buffer(buffer) {
 }
 
-void MessageEncoder::encode_termination_message(uint8* buffer, uint8 value) {
+void MessageEncoder::encode_process_message(uint8* buffer, uint8 value) {
   MessageEncoder encoder(null, buffer);
   encoder.encode(Smi::from(value));
-  ASSERT(encoder.size() <= MESSAGING_TERMINATION_MESSAGE_SIZE);
+  ASSERT(encoder.size() <= MESSAGING_PROCESS_MESSAGE_SIZE);
 }
 
 void MessageEncoder::free_copied() {
@@ -186,6 +186,15 @@ bool MessageEncoder::encode_byte_array(ByteArray* object) {
   return true;
 }
 
+#ifndef TOIT_FREERTOS
+bool MessageEncoder::encode_bundles(SnapshotBundle system, SnapshotBundle application) {
+  write_uint8(TAG_ARRAY);
+  write_cardinal(2);
+  return encode_byte_array_external(system.buffer(), system.size()) &&
+      encode_byte_array_external(application.buffer(), application.size());
+}
+#endif
+
 bool MessageEncoder::encode_byte_array_external(void* data, int length) {
   write_uint8(TAG_BYTE_ARRAY);
   write_cardinal(length);
@@ -272,7 +281,7 @@ MessageDecoder::MessageDecoder(Process* process, uint8* buffer)
     , _buffer(buffer) {
 }
 
-bool MessageDecoder::decode_termination_message(uint8* buffer, int* value) {
+bool MessageDecoder::decode_process_message(uint8* buffer, int* value) {
   MessageDecoder decoder(null, buffer);
   // TODO(kasper): Make this more robust. We don't know the content.
   Object* object = decoder.decode();
@@ -407,7 +416,7 @@ Object* MessageDecoder::decode_string(bool inlined) {
 
 Object* MessageDecoder::decode_array() {
   int length = read_cardinal();
-  Array* result = _process->object_heap()->allocate_array(length);
+  Array* result = _process->object_heap()->allocate_array(length, Smi::zero());
   if (result == null) {
     _allocation_failed = true;
     return null;

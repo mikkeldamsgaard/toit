@@ -35,9 +35,8 @@ class Process : public ProcessListFromProcessGroup::Element,
  public:
   enum Signal {
     KILL              = 1 << 0,
-    PRINT_STACK_TRACE = 1 << 1,
-    PREEMPT           = 1 << 2,
-    WATCHDOG          = 1 << 3,
+    PREEMPT           = 1 << 1,
+    WATCHDOG          = 1 << 2,
   };
 
   enum State {
@@ -53,13 +52,14 @@ class Process : public ProcessListFromProcessGroup::Element,
 
   static const char* StateName[];
 
-  Process(Program* program, ProcessGroup* group, SystemMessage* termination, char** args, Block* initial_block);
+  Process(Program* program, ProcessGroup* group, SystemMessage* termination, char** args, InitialMemory* initial_memory);
 #ifndef TOIT_FREERTOS
-  Process(Program* program, ProcessGroup* group, SystemMessage* termination, SnapshotBundle bundle, char** args, Block* initial_block);
+  Process(Program* program, ProcessGroup* group, SystemMessage* termination, SnapshotBundle system, SnapshotBundle application, char** args, InitialMemory* initial_memory);
 #endif
-  Process(Program* program, ProcessGroup* group, SystemMessage* termination, Method method, uint8* arguments, Block* initial_block);
+  Process(Program* program, ProcessGroup* group, SystemMessage* termination, Method method, uint8* arguments, InitialMemory* initial_memory);
   ~Process();
 
+  // Constructor for an external process (no Toit code).
   Process(ProcessRunner* runner, ProcessGroup* group, SystemMessage* termination);
 
   int id() const { return _id; }
@@ -229,7 +229,7 @@ class Process : public ProcessListFromProcessGroup::Element,
   }
 
  private:
-  Process(Program* program, ProcessRunner* runner, ProcessGroup* group, SystemMessage* termination, Block* initial_block);
+  Process(Program* program, ProcessRunner* runner, ProcessGroup* group, SystemMessage* termination, InitialMemory* initial_memory);
   void _append_message(Message* message);
   void _ensure_random_seeded();
 
@@ -293,21 +293,18 @@ class AllocationManager {
   explicit AllocationManager(Process* process)
     : _ptr(null)
     , _size(0)
-    , _process(process)
-    , _hit_limit(false) {}
+    , _process(process) {}
 
   AllocationManager(Process* process, void* ptr, word size)
     : _ptr(ptr)
     , _size(size)
-    , _process(process)
-    , _hit_limit(false) {
+    , _process(process) {
     process->register_external_allocation(size);
   }
 
   uint8_t* alloc(word length) {
     ASSERT(_ptr == null);
     if (!_process->should_allow_external_allocation(length)) {
-      _hit_limit = true;
       return null;
     }
     // Don't change this to use C++ array 'new' because that isn't compatible
@@ -353,7 +350,6 @@ class AllocationManager {
   void* _ptr;
   word _size;
   Process* _process;
-  bool _hit_limit;
 };
 
 } // namespace toit

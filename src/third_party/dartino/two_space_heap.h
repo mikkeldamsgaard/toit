@@ -12,10 +12,25 @@
 
 namespace toit {
 
+class HeapObjectFunctionVisitor : public HeapObjectVisitor {
+ public:
+  HeapObjectFunctionVisitor(Program* program, const std::function<void (HeapObject*)>& func)
+    : HeapObjectVisitor(program)
+    , _func(func) {}
+
+  virtual uword visit(HeapObject* object) override {
+    _func(object);
+    return object->size(program_);
+  }
+
+ private:
+  const std::function<void (HeapObject*)>& _func;
+};
+
 // TwoSpaceHeap represents the container for all HeapObjects.
 class TwoSpaceHeap {
  public:
-  TwoSpaceHeap(Program* program, ObjectHeap* process_heap);
+  TwoSpaceHeap(Program* program, ObjectHeap* process_heap, Chunk* chunk_1, Chunk* chunk_2);
   ~TwoSpaceHeap();
 
   // Allocate raw object. Returns null if a garbage collection is
@@ -24,7 +39,7 @@ class TwoSpaceHeap {
 
   // Max memory that can be added by adding new chunks.  Accounts for whole
   // chunks, not just the used memory in them.
-  uword max_expansion() { return UNLIMITED_EXPANSION; }
+  uword max_expansion();
 
   SemiSpace* space() { return semi_space_; }
 
@@ -54,6 +69,11 @@ class TwoSpaceHeap {
   void iterate_objects(HeapObjectVisitor* visitor) {
     semi_space_->iterate_objects(visitor);
     old_space_.iterate_objects(visitor);
+  }
+
+  void do_objects(const std::function<void (HeapObject*)>& func) {
+    HeapObjectFunctionVisitor visitor(program_, func);
+    iterate_objects(&visitor);
   }
 
   // Flush will write cached values back to object memory.
@@ -89,14 +109,14 @@ class TwoSpaceHeap {
   void collect_new_space();
   void collect_old_space();
   void collect_old_space_if_needed(bool force);
-  void perform_shared_garbage_collection();
-  void sweep_shared_heap();
-  void compact_shared_heap();
+  bool perform_garbage_collection();
+  void sweep_heap();
+  void compact_heap();
 
  private:
   static const uword UNLIMITED_EXPANSION = 0x80000000u - TOIT_PAGE_SIZE;
 
-  friend class GenerationalScavengeVisitor;
+  friend class ScavengeVisitor;
 
   Program* program_;
   ObjectHeap* process_heap_;
@@ -111,9 +131,9 @@ class TwoSpaceHeap {
 };
 
 // Helper class for copying HeapObjects.
-class GenerationalScavengeVisitor : public RootCallback {
+class ScavengeVisitor : public RootCallback {
  public:
-  explicit GenerationalScavengeVisitor(Program* program, TwoSpaceHeap* heap)
+  explicit ScavengeVisitor(Program* program, TwoSpaceHeap* heap)
       : program_(program),
         to_start_(heap->unused_semi_space_->single_chunk_start()),
         to_size_(heap->unused_semi_space_->single_chunk_size()),
@@ -139,11 +159,15 @@ class GenerationalScavengeVisitor : public RootCallback {
 
   bool trigger_old_space_gc() { return trigger_old_space_gc_; }
 
+  void set_record_to_dummy_address() {
+    record_ = &dummy_record_;
+  }
+
   void set_record_new_space_pointers(uint8* p) { record_ = p; }
 
  private:
   template <class SomeSpace>
-  static inline HeapObject* clone_in_to_space(Program* program, HeapObject* original, SomeSpace* to);
+  static inline HeapObject* clone_into_space(Program* program, HeapObject* original, SomeSpace* to);
 
   Program* program_;
   uword to_start_;

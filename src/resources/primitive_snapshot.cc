@@ -17,6 +17,7 @@
 
 #ifndef TOIT_FREERTOS
 
+#include "../heap.h"
 #include "../objects_inline.h"
 #include "../primitive.h"
 #include "../process.h"
@@ -30,26 +31,28 @@ namespace toit {
 MODULE_IMPLEMENTATION(snapshot, MODULE_SNAPSHOT)
 
 PRIMITIVE(launch) {
-  ARGS(Blob, bytes, int, gid, bool, pass_args);
+  ARGS(Blob, bytes, int, gid, Blob, program_id);
+  if (program_id.length() != 16) OUT_OF_BOUNDS;
 
-  Block* initial_block = VM::current()->heap_memory()->allocate_initial_block();
-  if (!initial_block) ALLOCATION_FAILED;
+  InitialMemoryManager manager;
+  bool ok = manager.allocate();
+  USE(ok);
+  ASSERT(ok);
 
   Snapshot snapshot(bytes.address(), bytes.length());
-  auto image = snapshot.read_image();
+  auto image = snapshot.read_image(program_id.address());
   Program* program = image.program();
   ProcessGroup* process_group = ProcessGroup::create(gid, program, image.memory());
-  if (process_group == NULL) {
-    VM::current()->heap_memory()->free_unused_block(initial_block);
-    image.release();
-    MALLOC_FAILED;
-  }
+  ASSERT(process_group);  // Allocations only fail on devices.
 
-  int pid = pass_args
-     ? VM::current()->scheduler()->run_program(program, process->args(), process_group, initial_block)
-     : VM::current()->scheduler()->run_program(program, {}, process_group, initial_block);
   // We don't use snapshots on devices so we assume malloc/new cannot fail.
+  int pid = VM::current()->scheduler()->run_program(
+      program,
+      process->args(),
+      process_group,
+      manager.initial_memory);
   ASSERT(pid != Scheduler::INVALID_PROCESS_ID);
+  manager.dont_auto_free();
   return Smi::from(pid);
 }
 

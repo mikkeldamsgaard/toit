@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "heap.h"
 #include "linked.h"
 #include "messaging.h"
 #include "os.h"
@@ -76,14 +77,15 @@ class Scheduler {
 #ifndef TOIT_FREERTOS
   // Run the boot program and wait for all processes to run to completion.
   ExitState run_boot_program(
-    Program* boot_program,  // It is then the responsibility of the boot_program to launch the application.
-    SnapshotBundle application_bundle,
+    Program* boot_program,
+    SnapshotBundle system,  // It is then the responsibility of the system process to launch the application.
+    SnapshotBundle application,
     char** args,
     int group_id);
 #endif  // TOIT_FREERTOS
 
   // Run a new program. Returns the process ID of the root process.
-  int run_program(Program* program, char** args, ProcessGroup* group, Block* initial_block);
+  int run_program(Program* program, char** args, ProcessGroup* group, InitialMemory* initial_memory);
 
   // Run a new external program. Returns the process.
   Process* run_external(ProcessRunner* runner);
@@ -101,7 +103,7 @@ class Scheduler {
   // deliver the signal.
   bool signal_process(Process* sender, int target_id, Process::Signal signal);
 
-  Process* hatch(Program* program, ProcessGroup* process_group, Method method, uint8* arguments, Block* initial_block);
+  Process* hatch(Program* program, ProcessGroup* process_group, Method method, uint8* arguments, InitialMemory* initial_memory);
 
   // Returns a new process id (only called from Process constructor).
   int next_process_id();
@@ -123,9 +125,6 @@ class Scheduler {
   // Collects garbage from the given process or some of the non-running
   // processes in the system.
   void gc(Process* process, bool malloc_failed, bool try_hard);
-
-  // Print stack traces for all live processes.
-  void print_stack_traces();
 
   // Primitive support.
 
@@ -176,15 +175,13 @@ class Scheduler {
 
   scheduler_err_t send_system_message(Locker& locker, SystemMessage* message);
 
-  void print_process(Locker& locker, Process* process, Interpreter* interpreter);
-
   void terminate_execution(Locker& locker, ExitState exit);
 
   Scheduler::ExitState launch_program(Locker& locker, Process* process);
 
   Process* find_process(Locker& locker, int process_id);
 
-  SystemMessage* new_termination_message(int gid);
+  SystemMessage* new_process_message(SystemMessage::Type type, int gid);
 
   // Called by the launch thread, to signal that time has passed.
   // The tick is used to drive process preemption.

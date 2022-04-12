@@ -6,6 +6,10 @@
 #include "object_memory.h"
 #include "two_space_heap.h"
 
+#include "../../top.h"
+
+#ifndef LEGACY_GC
+
 #include "../../heap.h"
 #include "../../objects.h"
 
@@ -24,22 +28,13 @@ Space::Space(Program* program, Space::Resizing resizeable, PageType page_type)
       top_(0),
       limit_(0),
       allocation_budget_(0),
-      no_allocation_failure_nesting_(0),
-      resizeable_(resizeable == CAN_RESIZE),
       page_type_(page_type) {}
 
-SemiSpace::SemiSpace(Program* program, Space::Resizing resizeable, PageType page_type,
-                     uword maximum_initial_size)
-    : Space(program, resizeable, page_type) {
-  if (resizeable_ && maximum_initial_size > 0) {
-    uword size = Utils::min(
-        Utils::round_up(maximum_initial_size, TOIT_PAGE_SIZE),
-        DEFAULT_MAXIMUM_CHUNK_SIZE);
-    Chunk* chunk = ObjectMemory::allocate_chunk(this, size);
-    if (chunk == null) FATAL("Failed to allocate %d bytes.\n", size);
-    append(chunk);
-    update_base_and_limit(chunk, chunk->start());
-  }
+SemiSpace::SemiSpace(Program* program, Chunk* chunk)
+    : Space(program, CANNOT_RESIZE, NEW_SPACE_PAGE) {
+  ASSERT(chunk);
+  append(chunk);
+  update_base_and_limit(chunk, chunk->start());
 }
 
 bool SemiSpace::is_flushed() {
@@ -75,21 +70,21 @@ HeapObject* SemiSpace::new_location(HeapObject* old_location) {
 }
 
 bool SemiSpace::is_alive(HeapObject* old_location) {
-  ASSERT(includes(old_location->_raw()));
+  // If we are doing a scavenge and are asked whether an old-space object is
+  // alive, return true.
+  if (!includes(old_location->_raw())) return true;
   return old_location->has_forwarding_address();
 }
 
 void Space::append(Chunk* chunk) {
-  ASSERT(chunk->owner() == this);
+  chunk->set_owner(this);
   // Insert chunk in increasing address order in the list.  This is
   // useful for the partial compactor.
-  if (!chunk_list_.insert_before(chunk, [&chunk](Chunk* it) { return it->start() > chunk->start(); })) {
-    chunk_list_.append(chunk);
-  }
+  chunk_list_.insert_before(chunk, [&chunk](Chunk* it) { return it->start() > chunk->start(); });
 }
 
 void SemiSpace::append(Chunk* chunk) {
-  ASSERT(chunk->owner() == this);
+  chunk->set_owner(this);
   if (!is_empty()) {
     // Update the accounting.
     used_ += top() - chunk_list_.last()->start();
@@ -100,7 +95,7 @@ void SemiSpace::append(Chunk* chunk) {
   chunk_list_.append(chunk);
 }
 
-uword SemiSpace::try_allocate(uword size) {
+uword SemiSpace::allocate(uword size) {
   // Make sure there is room for chunk end sentinel by using > instead of >=.
   // Use this ordering of the comparison to avoid very large allocations
   // turning into 'successful' allocations of negative size.
@@ -120,42 +115,6 @@ uword SemiSpace::try_allocate(uword size) {
   return 0;
 }
 
-uword SemiSpace::allocate_in_new_chunk(uword size) {
-  // Allocate new chunk that is big enough to fit the object.
-  uword default_chunk_size = get_default_chunk_size(used());
-  uword chunk_size =
-      size >= default_chunk_size
-          ? (size + WORD_SIZE)  // Make sure there is room for sentinel.
-          : default_chunk_size;
-
-  Chunk* chunk = ObjectMemory::allocate_chunk(this, chunk_size);
-  if (chunk != null) {
-    // Link it into the space.
-    append(chunk);
-
-    // Update limits.
-    allocation_budget_ -= chunk->size();
-    update_base_and_limit(chunk, chunk->start());
-
-    // Allocate.
-    uword result = try_allocate(size);
-    if (result != 0) return result;
-  }
-  return 0;
-}
-
-uword SemiSpace::allocate(uword size) {
-  ASSERT(size >= HeapObject::SIZE);
-  ASSERT(Utils::is_aligned(size, WORD_SIZE));
-
-  uword result = try_allocate(size);
-  if (result != 0) return result;
-
-  if (!in_no_allocation_failure_scope() && needs_garbage_collection()) return 0;
-
-  return allocate_in_new_chunk(size);
-}
-
 uword SemiSpace::used() {
   if (is_empty()) return used_;
   return used_ + (top() - chunk_list_.last()->start());
@@ -163,11 +122,10 @@ uword SemiSpace::used() {
 
 // Called multiple times until there is no more work.  Finds objects moved to
 // the to-space and traverses them to find and fix more new-space pointers.
-bool SemiSpace::complete_scavenge_generational(GenerationalScavengeVisitor* visitor) {
+bool SemiSpace::complete_scavenge(ScavengeVisitor* visitor) {
   bool found_work = false;
   // No need to update remembered set for semispace->semispace pointers.
-  uint8 dummy;
-  visitor->set_record_new_space_pointers(&dummy);
+  visitor->set_record_to_dummy_address();
 
   for (auto chunk : chunk_list_) {
     uword current = chunk->scavenge_pointer();
@@ -190,3 +148,5 @@ void SemiSpace::process_weak_pointers(SemiSpace* to_space, OldSpace* old_space) 
 }
 
 }  // namespace toit
+
+#endif  // LEGACY_GC

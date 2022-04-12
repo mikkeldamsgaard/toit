@@ -14,7 +14,10 @@ namespace toit {
 
 class MarkingStack {
  public:
-  explicit MarkingStack(Program* program) : next_(&backing_[0]), limit_(&backing_[CHUNK_SIZE]) {}
+  explicit MarkingStack(Program* program)
+    : program_(program)
+    , next_(&backing_[0])
+    , limit_(&backing_[CHUNK_SIZE]) {}
 
   void push(HeapObject* object) {
     ASSERT(GcMetadata::is_marked(object));
@@ -85,7 +88,7 @@ class CompactingVisitor : public HeapObjectVisitor {
  public:
   CompactingVisitor(Program* program, OldSpace* space, FixPointersVisitor* fix_pointers_visitor);
 
-  virtual void chunk_start(Chunk* chunk) {
+  virtual void chunk_start(Chunk* chunk) override {
     GcMetadata::initialize_starts_for_chunk(chunk);
     uint32* last_bits = GcMetadata::mark_bits_for(chunk->usable_end());
     // When compacting the heap, we skip dead objects.  In order to do this
@@ -111,7 +114,7 @@ class SweepingVisitor : public HeapObjectVisitor {
  public:
   SweepingVisitor(Program* program, OldSpace* space);
 
-  virtual void chunk_start(Chunk* chunk) {
+  virtual void chunk_start(Chunk* chunk) override {
     GcMetadata::initialize_starts_for_chunk(chunk);
   }
 

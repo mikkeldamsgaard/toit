@@ -32,8 +32,45 @@ namespace toit {
 
 class ObjectNotifier;
 
-// An object heap contains all objects created at runtime.
 #ifdef LEGACY_GC
+typedef Block InitialMemory;
+#else
+struct InitialMemory {
+  Chunk* chunk_1;
+  Chunk* chunk_2;
+};
+#endif
+
+// A class that uses a RAII destructor to free memory already
+// allocated if a later alllocation fails.
+class InitialMemoryManager {
+ public:
+#ifdef LEGACY_GC
+  Block* initial_memory = null;
+#else
+  InitialMemory* initial_memory = &chunks;
+  InitialMemory chunks = {null, null};
+#endif
+
+  void dont_auto_free() {
+#ifdef LEGACY_GC
+    initial_memory = null;
+#else
+    chunks.chunk_1 = null;
+    chunks.chunk_2 = null;
+#endif
+  }
+
+  // Allocates initial pages for heap.  Returns success.
+  bool allocate();
+
+  // Frees any of the fields that are not null.
+  ~InitialMemoryManager();
+};
+
+#ifdef LEGACY_GC
+
+// Legacy-GC: An object heap contains all objects created at runtime.
 class ObjectHeap : public RawHeap {
  public:
   ObjectHeap(Process* owner, Program* program, Block* initial_block);
@@ -58,21 +95,35 @@ class ObjectHeap : public RawHeap {
   Iterator object_iterator() { return Iterator(_blocks, _program); }
 
   static int max_allocation_size() { return Block::max_payload_size(); }
+
+  void do_objects(const std::function<void (HeapObject*)>& func) {
+    Iterator iterator(_blocks, _program);
+    while (!iterator.eos()) {
+      HeapObject* object = iterator.current();
+      func(object);
+      iterator.advance();
+    }
+  }
+
 #else
 class ObjectHeap {
  public:
-  ObjectHeap(Process* owner, Program* program);
+  ObjectHeap(Program* program, Process* owner, InitialMemory* initial_memory);
   ~ObjectHeap();
 
   // TODO: In the new heap there is no max allocation size.
   static int max_allocation_size() { return TOIT_PAGE_SIZE - 96; }
+
+  inline void do_objects(const std::function<void (HeapObject*)>& func) {
+    _two_space_heap.do_objects(func);
+  }
+
 #endif
 
   // Shared allocation operations.
   Instance* allocate_instance(Smi* class_id);
   Instance* allocate_instance(TypeTag class_tag, Smi* class_id, Smi* instance_size);
   Array* allocate_array(int length, Object* filler);
-  Array* allocate_array(int length);
   ByteArray* allocate_external_byte_array(int length, uint8* memory, bool dispose, bool clear_content = true);
   String* allocate_external_string(int length, uint8* memory, bool dispose);
   ByteArray* allocate_internal_byte_array(int length);
@@ -80,9 +131,13 @@ class ObjectHeap {
   Double* allocate_double(double value);
   LargeInteger* allocate_large_integer(int64 value);
 
+  void process_registered_finalizers(RootCallback* ss, LivenessOracle* from_space);
+  void process_registered_vm_finalizers(RootCallback* ss, LivenessOracle* from_space);
+
   Program* program() { return _program; }
 
   int64 total_bytes_allocated() { return _total_bytes_allocated; }
+  uword limit() const { return _limit; }
 
 #if !defined(DEPLOY) && defined(LEGACY_GC)
   void enter_gc() {
@@ -149,7 +204,7 @@ class ObjectHeap {
 
   Object** global_variables() const { return _global_variables; }
   Task* task() { return _task; }
-  void set_task(Task* task) { _task = task; }
+  void set_task(Task* task);
 
   // Garbage collection operation for runtime objects.
   int gc();
@@ -161,8 +216,8 @@ class ObjectHeap {
   bool add_vm_finalizer(HeapObject* key);
   bool remove_vm_finalizer(HeapObject* key);
 
+  bool has_finalizer_to_run() const { return !_runnable_finalizers.is_empty(); }
   Object* next_finalizer_to_run();
-  void set_finalizer_notifier(ObjectNotifier* notifier);
 
   // Tells how many gc operations this heap has experienced.
   int gc_count() { return _gc_count; }

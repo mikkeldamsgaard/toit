@@ -61,6 +61,7 @@ namespace toit {
   M(math,    MODULE_MATH)                    \
   M(x509,    MODULE_X509)                    \
   M(flash_kv, MODULE_FLASH_KV)               \
+  M(debug,   MODULE_DEBUG)                   \
 
 #define MODULE_CORE(PRIMITIVE)               \
   PRIMITIVE(write_string_on_stdout, 2)       \
@@ -163,14 +164,13 @@ namespace toit {
   PRIMITIVE(signal_kill, 1)                  \
   PRIMITIVE(current_process_id, 0)           \
   PRIMITIVE(process_send, 3)                 \
-  PRIMITIVE(task_peek_message_type, 0)       \
+  PRIMITIVE(task_has_messages, 0)            \
   PRIMITIVE(task_receive_message, 0)         \
   PRIMITIVE(concat_strings, 1)               \
   PRIMITIVE(task_current, 0)                 \
   PRIMITIVE(task_new, 1)                     \
   PRIMITIVE(task_transfer, 2)                \
   PRIMITIVE(task_stack, 1)                   \
-  PRIMITIVE(task_reset_stack_limit, 0)       \
   PRIMITIVE(gc_count, 0)                     \
   PRIMITIVE(byte_array_is_raw_bytes, 1)      \
   PRIMITIVE(byte_array_length, 1)            \
@@ -187,8 +187,6 @@ namespace toit {
   PRIMITIVE(create_off_heap_byte_array, 1)   \
   PRIMITIVE(add_finalizer, 2)                \
   PRIMITIVE(remove_finalizer, 1)             \
-  PRIMITIVE(next_finalizer_to_run, 0)        \
-  PRIMITIVE(set_finalizer_notifier, 1)       \
   PRIMITIVE(large_integer_unary_minus, 1)    \
   PRIMITIVE(large_integer_not, 1)            \
   PRIMITIVE(large_integer_and, 2)            \
@@ -293,7 +291,6 @@ namespace toit {
   PRIMITIVE(disconnect, 2)                   \
   PRIMITIVE(disconnect_reason, 1)            \
   PRIMITIVE(get_ip, 1)                       \
-  PRIMITIVE(get_stored_ip, 0)                \
   PRIMITIVE(get_rssi, 1)                     \
 
 #define MODULE_ETHERNET(PRIMITIVE)           \
@@ -351,8 +348,11 @@ namespace toit {
   PRIMITIVE(init, 3)                         \
   PRIMITIVE(close, 1)                        \
   PRIMITIVE(write, 3)                        \
+  PRIMITIVE(write_reg, 4)                    \
+  PRIMITIVE(write_address, 4)                \
   PRIMITIVE(read, 3)                         \
   PRIMITIVE(read_reg, 4)                     \
+  PRIMITIVE(read_address, 4)                 \
 
 #define MODULE_I2S(PRIMITIVE)                \
   PRIMITIVE(init, 0)                         \
@@ -382,10 +382,11 @@ namespace toit {
   PRIMITIVE(use, 2)                          \
   PRIMITIVE(unuse, 2)                        \
   PRIMITIVE(config_rx, 9)                    \
+  PRIMITIVE(set_idle_threshold, 2)           \
   PRIMITIVE(config_tx, 12)                   \
   PRIMITIVE(config_bidirectional_pin, 2)     \
-  PRIMITIVE(transfer, 2)                     \
-  PRIMITIVE(transfer_and_read, 4)            \
+  PRIMITIVE(transmit, 2)                     \
+  PRIMITIVE(transmit_and_receive, 6)         \
 
 #define MODULE_CRYPTO(PRIMITIVE)             \
   PRIMITIVE(sha1_start, 1)                   \
@@ -428,8 +429,8 @@ namespace toit {
 
 #define MODULE_EVENTS(PRIMITIVE)             \
   PRIMITIVE(read_state, 2)                   \
-  PRIMITIVE(register_object_notifier, 3)     \
-  PRIMITIVE(unregister_object_notifier, 2)   \
+  PRIMITIVE(register_monitor_notifier, 3)    \
+  PRIMITIVE(unregister_monitor_notifier, 2)  \
 
 #define MODULE_SNAPSHOT(PRIMITIVE)           \
   PRIMITIVE(launch, 3)                       \
@@ -567,6 +568,9 @@ namespace toit {
   PRIMITIVE(write_bytes, 3)                  \
   PRIMITIVE(delete, 2)                       \
   PRIMITIVE(erase, 1)                        \
+
+#define MODULE_DEBUG(PRIMITIVE)              \
+  PRIMITIVE(object_histogram, 0)             \
 
 // ----------------------------------------------------------------------------
 

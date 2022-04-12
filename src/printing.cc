@@ -39,11 +39,6 @@ void print_name_console(String* string) {
   print_name(&p, string);
 }
 
-void print_heap_console(ObjectHeap* heap, const char* title) {
-  ConsolePrinter p(null);
-  print_heap(&p, heap, title);
-}
-
 #define BYTECODE_PRINT(name, length, format, print) print,
 static const char* opcode_print[] { BYTECODES(BYTECODE_PRINT) "Illegal" };
 #undef BYTECODE_PRINT
@@ -405,8 +400,8 @@ class LongPrintVisitor : public PrintVisitor {
   void visit_instance(Instance* instance) {
     print_heap_address(instance);
     _printer->printf("Instance of class %ld\n", instance->class_id()->value());
-    int len = instance->length(_printer->program()->instance_size_for(instance));
-    for (int index = 0; index < len; index++) {
+    int fields = Instance::fields_from_size(_printer->program()->instance_size_for(instance));
+    for (int index = 0; index < fields; index++) {
       _printer->printf(" - %d: ", index);
       _sub.accept(instance->at(index));
       _printer->printf("\n");
@@ -453,13 +448,6 @@ void print_object(Printer* printer, Object* object) {
 void print_object_short(Printer* printer, Object* object, bool is_top_level) {
   ShortPrintVisitor p(printer, is_top_level);
   p.accept(object);
-}
-
-void print_heap(Printer* printer, ObjectHeap* heap, const char* title) {
-  printer->printf("%s:\n", title);
-  for (ObjectHeap::Iterator i = heap->object_iterator(); !i.eos(); i.advance()) {
-    print_object(printer, i.current());
-  }
 }
 
 void Printer::print_buffer(const uint8_t* s, int len) {

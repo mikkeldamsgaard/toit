@@ -18,7 +18,7 @@ namespace toit {
 
 class Chunk;
 class FreeList;
-class GenerationalScavengeVisitor;
+class ScavengeVisitor;
 class HeapObject;
 class HeapObjectVisitor;
 class MarkingStack;
@@ -58,6 +58,7 @@ class Chunk : public ChunkList::Element {
  public:
   // The space owning this chunk.
   Space* owner() const { return owner_; }
+  void set_owner(Space* value);
 
   // Returns the first address in this chunk.
   uword start() const { return start_; }
@@ -108,8 +109,6 @@ class Chunk : public ChunkList::Element {
   Chunk(Space* owner, uword start, uword size, bool external = false);
   ~Chunk();
 
-  void set_owner(Space* value) { owner_ = value; }
-
   friend class ObjectMemory;
   friend class SemiSpace;
   friend class Space;
@@ -135,8 +134,13 @@ class HeapObjectVisitor {
   Program* program_;
 };
 
+class LivenessOracle {
+ public:
+  virtual bool is_alive(HeapObject* object) = 0;
+};
+
 // Space is a chain of chunks. It supports allocation and traversal.
-class Space {
+class Space : public LivenessOracle {
  public:
   static const uword DEFAULT_MINIMUM_CHUNK_SIZE = TOIT_PAGE_SIZE;
   static const uword DEFAULT_MAXIMUM_CHUNK_SIZE = 256 * KB;
@@ -188,18 +192,6 @@ class Space {
   void set_allocation_budget(word new_budget);
 
   void clear_mark_bits();
-
-  // Tells whether garbage collection is needed.  Only to be called when
-  // bump allocation has failed, or on old space after a new-space GC.
-  // For a fixed-size new-space it always returns true because we always
-  // want to do a new-space GC when the single chunk fills up.
-  bool needs_garbage_collection() {
-    return allocation_budget_ <= 0 || !resizeable_;
-  }
-
-  bool in_no_allocation_failure_scope() {
-    return no_allocation_failure_nesting_ != 0;
-  }
 
   bool is_empty() const { return chunk_list_.is_empty(); }
 
@@ -262,15 +254,6 @@ class Space {
 
   uword top() { return top_; }
 
-  void increment_no_allocation_failure_nesting() {
-    ASSERT(resizeable_);  // Fixed size heap cannot guarantee allocation.
-    ++no_allocation_failure_nesting_;
-  }
-
-  void decrement_no_allocation_failure_nesting() {
-    --no_allocation_failure_nesting_;
-  }
-
   Program* program_;
   ChunkList chunk_list_;
   uword used_;              // Allocated bytes.
@@ -281,15 +264,13 @@ class Space {
   // hit, we may still trigger a GC because we are getting close to the limit
   // for the committed size of the chunks in the heap.
   word allocation_budget_;
-  int no_allocation_failure_nesting_;
-  bool resizeable_;
 
   PageType page_type_;
 };
 
 class SemiSpace : public Space {
  public:
-  SemiSpace(Program* program, Resizing resizeable, PageType page_type, uword maximum_initial_size);
+  SemiSpace(Program* program, Chunk* chunk);
 
   // Returns the total size of allocated objects.
   virtual uword used();
@@ -315,7 +296,7 @@ class SemiSpace : public Space {
 
   // For the mutable heap.
   void start_scavenge();
-  bool complete_scavenge_generational(GenerationalScavengeVisitor* visitor);
+  bool complete_scavenge(ScavengeVisitor* visitor);
 
   void update_base_and_limit(Chunk* chunk, uword top);
 
@@ -329,8 +310,6 @@ class SemiSpace : public Space {
   Chunk* allocate_and_use_chunk(uword size);
 
   uword allocate_in_new_chunk(uword size);
-
-  uword try_allocate(uword size);
 };
 
 class FreeList {
@@ -351,7 +330,7 @@ class FreeList {
       return;
     }
     const int WORD_BITS = sizeof(uword) * BYTE_BIT_SIZE;
-    int bucket = WORD_BITS - Utils::clz(free_size);
+    int bucket = WORD_BITS - Utils::clz(free_size) - 1;
     if (bucket >= NUMBER_OF_BUCKETS) bucket = NUMBER_OF_BUCKETS - 1;
     result->set_next_region(buckets_[bucket]);
     buckets_[bucket] = result;
@@ -458,11 +437,14 @@ class OldSpace : public Space {
   void zap_object_starts();
 
   // Find pointers to young-space.
-  void visit_remembered_set(GenerationalScavengeVisitor* visitor);
+  void visit_remembered_set(ScavengeVisitor* visitor);
+
+  // Until the write barrier works.
+  void rebuild_remembered_set();
 
   // For the objects promoted to the old space during scavenge.
   inline void start_scavenge() { start_tracking_allocations(); }
-  bool complete_scavenge_generational(GenerationalScavengeVisitor* visitor);
+  bool complete_scavenge(ScavengeVisitor* visitor);
   inline void end_scavenge() { end_tracking_allocations(); }
 
   void start_tracking_allocations();
@@ -483,6 +465,12 @@ class OldSpace : public Space {
   bool compacting() { return compacting_; }
 
   void set_used_after_last_gc(uword used) { used_after_last_gc_ = used; }
+
+  // Tells whether garbage collection is needed.  Only to be called when
+  // bump allocation has failed, or on old space after a new-space GC.
+  bool needs_garbage_collection() {
+    return used_ > 0 && allocation_budget_ <= 0;
+  }
 
   // For detecting pointless GCs that are really an out-of-memory situation.
   inline void evaluate_pointlessness() {};  // TODO: Implement.
@@ -505,18 +493,6 @@ class OldSpace : public Space {
   uword new_space_garbage_found_since_last_gc_ = 0;
   int successive_pointless_gcs_ = 0;
   uword used_after_last_gc_ = 0;
-};
-
-class NoAllocationFailureScope {
- public:
-  explicit NoAllocationFailureScope(Space* space) : space_(space) {
-    space->increment_no_allocation_failure_nesting();
-  }
-
-  ~NoAllocationFailureScope() { space_->decrement_no_allocation_failure_nesting(); }
-
- private:
-  Space* space_;
 };
 
 // ObjectMemory controls all memory used by object heaps.
