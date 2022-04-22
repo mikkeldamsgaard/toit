@@ -168,7 +168,8 @@ PRIMITIVE(config_bidirectional_pin) {
   } else {
     GPIO.enable1_w1ts.data = (0x1 << (pin - 32));
   }
-  rmt_set_pin(static_cast<rmt_channel_t>(tx), RMT_MODE_TX, static_cast<gpio_num_t>(pin));
+  rmt_set_gpio(static_cast<rmt_channel_t>(tx), RMT_MODE_TX, static_cast<gpio_num_t>(pin), false);
+
   PIN_INPUT_ENABLE(GPIO_PIN_MUX_REG[pin]);
   GPIO.pin[pin].pad_driver = 1;
 
