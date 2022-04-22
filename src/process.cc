@@ -99,8 +99,7 @@ Process::Process(Program* program, ProcessGroup* group, SystemMessage* terminati
 }
 
 // Constructor for an external process (no Toit code).
-Process::Process(ProcessRunner* runner, ProcessGroup* group, SystemMessage* termination)
-    : Process(null, runner, group, termination, null) {
+Process::Process(ProcessRunner* runner, ProcessGroup* group, SystemMessage* termination) : Process(null, runner, group, termination, null) {
 }
 
 Process::~Process() {

@@ -29,7 +29,7 @@
 //#define TOIT_GC_LOGGING
 
 // Use semispace non-generational GC.
-#define LEGACY_GC 1
+#define LEGACY_GC
 
 // Support for profiling configuration
 #if defined(PROF)
