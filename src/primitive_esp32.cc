@@ -90,12 +90,16 @@ PRIMITIVE(ota_begin) {
   }
 
   ota_partition = esp_ota_get_next_update_partition(null);
+
   if (ota_partition == null) {
     ESP_LOGE("Toit", "Cannot find OTA partition - retrying after GC");
     // This can actually be caused by a malloc failure in the
     // esp-idf libraries.
     MALLOC_FAILED;
   }
+
+  ESP_LOGI("Toit", "Next partition: %x",ota_partition->address);
+  ESP_LOGI("Toit", "Boot partition: %x",esp_ota_get_running_partition()->address);
 
   if (to > ota_partition->size) {
     ESP_LOGE("Toit", "Oversized ota_begin args: %d-%d", to, ota_partition->size);
