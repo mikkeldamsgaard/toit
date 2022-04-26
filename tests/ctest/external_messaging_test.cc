@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
   if (argc != 2) FATAL("wrong number of arguments");
   FlashRegistry::set_up();
   OS::set_up();
-  GcMetadata::set_up();
+  ObjectMemory::set_up();
 
   auto compiled = compile(argv[1]);
   int result = run_program(compiled.snapshot());
