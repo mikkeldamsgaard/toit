@@ -13,6 +13,9 @@
 // The license can be found in the file `LICENSE` in the top level
 // directory of this repository.
 
+#include "top.h"
+
+#if defined(CONFIG_TOIT_ENABLE_IP)
 #include <mbedtls/error.h>
 #include <mbedtls/pem.h>
 #include <mbedtls/platform.h>
@@ -26,7 +29,6 @@
 
 #include "tls.h"
 #include "x509.h"
-
 namespace toit {
 
 void MbedTLSResourceGroup::uninit() {
@@ -697,3 +699,4 @@ PRIMITIVE(set_session) {
 }
 
 } // namespace toit
+#endif

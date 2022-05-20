@@ -36,7 +36,15 @@ static const uint8 OTHER_THREADS_MALLOC_TAG       = 11;
 static const uint8 THREAD_SPAWN_MALLOC_TAG        = 12;
 static const uint8 NULL_MALLOC_TAG                = 13;
 static const uint8 WIFI_MALLOC_TAG                = 14;
-static const uint8 NUMBER_OF_MALLOC_TAGS          = 15;
+static const uint8 BLE_MALLOC_TAG                 = 15;
+
+static const uint8 CUSTOM_THREAD_MALLOC_TAG       = 16;
+static const uint8 CUSTOM_OTHER_MALLOC_TAG        = 17;
+
+static const uint8 CODEC_MALLOC_TAG               = 18;
+static const uint8 I2S_MALLOC_TAG                 = 19;
+
+static const uint8 NUMBER_OF_MALLOC_TAGS          = 20;
 
 #ifdef TOIT_CMPCTMALLOC
 

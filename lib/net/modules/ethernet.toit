@@ -26,6 +26,7 @@ class Ethernet:
   logger_/log.Logger ::= log.default.with_name "ethernet"
 
   resource_group_ := null
+  ip_resource_ := null
 
   constructor
       --phy_chip/int
@@ -72,16 +73,16 @@ class Ethernet:
         throw "CONNECT_FAILED"
 
   get_ip:
-    resource := ethernet_setup_ip_ resource_group_
-    res := monitor.ResourceState_ resource_group_ resource
-    state := res.wait
-    res.dispose
-    if (state & TOIT_ETHERNET_DHCP_SUCCESS_) != 0:
-      ip := ethernet_get_ip_ resource
-      logger_.debug "got ip" --tags={"ip": ip}
-      return ip
-    close
-    throw "IP_ASSIGN_FAILED"
+    if not ip_resource_:
+      ip_resource_ = ethernet_setup_ip_ resource_group_
+      res := ResourceState_ resource_group_ ip_resource_
+
+      state := res.wait_for_state TOIT_ETHERNET_DHCP_SUCCESS_
+      res.dispose
+
+    ip := ethernet_get_ip_ ip_resource_
+    logger_.debug "got ip" --tags={"ip": ip}
+    return ip
 
   rssi -> int?:
     return null

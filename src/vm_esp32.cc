@@ -34,11 +34,13 @@ namespace toit {
 void VM::load_platform_event_sources() {
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + EVENT_SOURCE_MALLOC_TAG);
   event_manager()->add_event_source(_new TimerEventSource());
-  event_manager()->add_event_source(_new LwIPEventSource());
   event_manager()->add_event_source(_new SystemEventSource());
   event_manager()->add_event_source(_new GPIOEventSource());
   event_manager()->add_event_source(_new EventQueueEventSource());
+#if defined(CONFIG_TOIT_ENABLE_IP)
+  event_manager()->add_event_source(_new LwIPEventSource());
   event_manager()->add_event_source(_new TLSEventSource());
+#endif
 #ifdef CONFIG_BT_ENABLED
   event_manager()->add_event_source(_new BLEEventSource());
 #endif

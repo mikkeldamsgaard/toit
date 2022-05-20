@@ -181,6 +181,7 @@ LwIPEventSource::LwIPEventSource()
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + LWIP_MALLOC_TAG);
 #if defined(TOIT_FREERTOS)
   // Create the LWIP thread.
+  printf("[lwip] Initializing lwip");
   esp_netif_init();
 #else
   // LWIP defaults to using rand() to get randomness, but that returns the same

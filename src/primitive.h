@@ -35,6 +35,7 @@ namespace toit {
   M(i2c,     MODULE_I2C)                     \
   M(i2s,     MODULE_I2S)                     \
   M(spi,     MODULE_SPI)                     \
+  M(spi_linux, MODULE_SPI_LINUX)             \
   M(uart,    MODULE_UART)                    \
   M(rmt,     MODULE_RMT)                     \
   M(crypto,  MODULE_CRYPTO)                  \
@@ -369,6 +370,10 @@ namespace toit {
   PRIMITIVE(device_close, 2)                 \
   PRIMITIVE(transfer, 8)                     \
 
+#define MODULE_SPI_LINUX(PRIMITIVE)          \
+  PRIMITIVE(open, 1)                         \
+  PRIMITIVE(transfer, 8)                     \
+
 #define MODULE_UART(PRIMITIVE)               \
   PRIMITIVE(init, 0)                         \
   PRIMITIVE(create, 10)                      \
@@ -379,14 +384,19 @@ namespace toit {
 
 #define MODULE_RMT(PRIMITIVE)                \
   PRIMITIVE(init, 0)                         \
-  PRIMITIVE(use, 2)                          \
-  PRIMITIVE(unuse, 2)                        \
-  PRIMITIVE(config_rx, 9)                    \
+  PRIMITIVE(channel_new, 3)                  \
+  PRIMITIVE(channel_delete, 2)               \
+  PRIMITIVE(config_rx, 8)                    \
+  PRIMITIVE(config_tx, 11)                   \
+  PRIMITIVE(get_idle_threshold, 1)           \
   PRIMITIVE(set_idle_threshold, 2)           \
-  PRIMITIVE(config_tx, 12)                   \
   PRIMITIVE(config_bidirectional_pin, 2)     \
   PRIMITIVE(transmit, 2)                     \
-  PRIMITIVE(transmit_and_receive, 6)         \
+  PRIMITIVE(transmit_done, 2)                \
+  PRIMITIVE(prepare_receive, 1)              \
+  PRIMITIVE(start_receive, 2)                \
+  PRIMITIVE(receive, 3)                      \
+  PRIMITIVE(stop_receive, 1)                 \
 
 #define MODULE_CRYPTO(PRIMITIVE)             \
   PRIMITIVE(sha1_start, 1)                   \
@@ -469,11 +479,13 @@ namespace toit {
   PRIMITIVE(close, 1)                       \
 
 #define MODULE_PWM(PRIMITIVE)                \
-  PRIMITIVE(init, 1)                         \
+  PRIMITIVE(init, 2)                         \
   PRIMITIVE(close, 1)                        \
   PRIMITIVE(start, 3)                        \
   PRIMITIVE(factor, 2)                       \
   PRIMITIVE(set_factor, 3)                   \
+  PRIMITIVE(frequency, 1)                    \
+  PRIMITIVE(set_frequency, 2)                \
   PRIMITIVE(close_channel, 2)                \
 
 #define MODULE_PROGRAMS_REGISTRY(PRIMITIVE)  \
@@ -832,6 +844,7 @@ namespace toit {
 #define _A_T_I2SResource(N, name)         MAKE_UNPACKING_MACRO(I2SResource, N, name)
 #define _A_T_AdcState(N, name)            MAKE_UNPACKING_MACRO(AdcState, N, name)
 #define _A_T_PWMResource(N, name)         MAKE_UNPACKING_MACRO(PWMResource, N, name)
+#define _A_T_RMTResource(N, name)         MAKE_UNPACKING_MACRO(RMTResource, N, name)
 #define _A_T_GAPResource(N, name)         MAKE_UNPACKING_MACRO(GAPResource, N, name)
 #define _A_T_GATTResource(N, name)        MAKE_UNPACKING_MACRO(GATTResource, N, name)
 #define _A_T_BLEServerConfigGroup(N, name)  MAKE_UNPACKING_MACRO(BLEServerConfigGroup, N, name)

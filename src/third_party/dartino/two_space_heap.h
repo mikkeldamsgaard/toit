@@ -1,4 +1,4 @@
-// Copyright (c) 2014, the Dartino project authors. Please see the AUTHORS file
+// Copyright (c) 2022, the Dartino project authors. Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE.md file.
 
@@ -41,7 +41,7 @@ class TwoSpaceHeap {
   // chunks, not just the used memory in them.
   uword max_expansion();
 
-  SemiSpace* space() { return &semi_space_; }
+  SemiSpace* new_space() { return &semi_space_; }
 
   SemiSpace* take_space();
 
@@ -57,12 +57,11 @@ class TwoSpaceHeap {
 
   void validate();
 
-  // Returns false for allocation failure.
-  bool initialize();
-
   OldSpace* old_space() { return &old_space_; }
 
   void swap_semi_spaces(SemiSpace& from, SemiSpace& to);
+
+  Process* process();
 
   // Iterate over all objects in the heap.
   void iterate_objects(HeapObjectVisitor* visitor) {
@@ -105,10 +104,12 @@ class TwoSpaceHeap {
 
   void freed_foreign_memory(uword size);
 
-  void collect_new_space();
-  void collect_old_space();
-  void collect_old_space_if_needed(bool force);
-  bool perform_garbage_collection();
+  void collect_new_space(bool try_hard);
+  void collect_old_space(bool force_compact);
+  void collect_old_space_if_needed(bool force_compact, bool force);
+  bool perform_garbage_collection(bool force_compact);
+  bool cross_process_gc_needed() const { return malloc_failed_; }
+  void report_malloc_failed() { malloc_failed_ = true; }
   void sweep_heap();
   void compact_heap();
 
@@ -126,6 +127,7 @@ class TwoSpaceHeap {
   uword water_mark_;
   uword semi_space_size_;
   uword total_bytes_allocated_ = 0;
+  bool malloc_failed_ = false;
 };
 
 // Helper class for copying HeapObjects.
@@ -135,8 +137,8 @@ class ScavengeVisitor : public RootCallback {
       : program_(program),
         to_start_(to_chunk->start()),
         to_size_(to_chunk->size()),
-        from_start_(heap->space()->single_chunk_start()),
-        from_size_(heap->space()->single_chunk_size()),
+        from_start_(heap->new_space()->single_chunk_start()),
+        from_size_(heap->new_space()->single_chunk_size()),
         to_(program, to_chunk),
         old_(heap->old_space()),
         record_(&dummy_record_),

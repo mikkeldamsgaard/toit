@@ -15,11 +15,7 @@
 
 #include "../top.h"
 
-#ifdef TOIT_FREERTOS
-#include <esp_wifi.h>
-#endif
-
-#if defined(TOIT_FREERTOS) || defined(TOIT_USE_LWIP)
+#if (defined(TOIT_FREERTOS) || defined(TOIT_USE_LWIP)) && defined(CONFIG_TOIT_ENABLE_IP)
 #include <lwip/ip_addr.h>
 
 #include "../resource.h"

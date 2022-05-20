@@ -17,10 +17,9 @@
 
 #if defined(TOIT_FREERTOS) && defined(CONFIG_BT_ENABLED)
 
-#include <functional>
-
 #include "../resource.h"
 
+#include <functional>
 #include <host/ble_gap.h>
 
 namespace toit {
@@ -46,7 +45,7 @@ class BLEResource : public Resource {
 class GAPResource : public BLEResource {
  public:
   TAG(GAPResource);
-  GAPResource(ResourceGroup* group)
+  explicit GAPResource(ResourceGroup* group)
       : BLEResource(group, GAP) {}
 };
 
@@ -55,11 +54,16 @@ class GATTResource : public BLEResource {
   TAG(GATTResource);
   explicit GATTResource(ResourceGroup* group)
       : BLEResource(group, GATT)
+      // TODO(kasper): The allocation here can fail. Must be checked!
       , _mutex(OS::allocate_mutex(3, "")) {}
 
   ~GATTResource() override {
     if (_mbuf) os_mbuf_free(_mbuf);
     OS::dispose(_mutex);
+  }
+
+  void make_deletable() override {
+    if (_handle == kInvalidHandle) delete this;
   }
 
   uint16 handle() const { return _handle; }
@@ -69,6 +73,7 @@ class GATTResource : public BLEResource {
     Locker locker(_mutex);
     return _error;
   }
+
   void set_error(uint32 error) {
     Locker locker(_mutex);
     _result = 0;
@@ -79,6 +84,7 @@ class GATTResource : public BLEResource {
     Locker locker(_mutex);
     return _result;
   }
+
   void set_result(uint32 result) {
     Locker locker(_mutex);
     _result = result;
@@ -102,9 +108,8 @@ class GATTResource : public BLEResource {
   Mutex* _mutex;
   uint32 _result = 0;
   uint32 _error = 0;
-  struct os_mbuf* _mbuf = null;
+  os_mbuf* _mbuf = null;
 };
-
 
 class BLEServerServiceResource;
 typedef LinkedList<BLEServerServiceResource> BLEServerServiceList;
@@ -127,7 +132,7 @@ class BLEServerCharacteristicResource: public Resource, public BLEServerCharacte
       , _indicate(false)
       , _notify(false)
       , _conn_handle(0)
-      ,_mutex(mutex) {}
+      , _mutex(mutex) {}
 
   ~BLEServerCharacteristicResource() override;
   ble_uuid_any_t uuid() const { return _uuid; }
@@ -190,8 +195,6 @@ class BLEServerServiceResource: public Resource, public BLEServerServiceList::El
   BLEServerCharacteristicList _characteristics;
   ble_uuid_any_t _uuid;
 };
-
-
 
 class BLEEventSource : public LazyEventSource, public Thread {
  public:

@@ -192,7 +192,7 @@ void Thread::_boot() {
   entry();
 }
 
-bool Thread::spawn(int stack_size, int core) {
+bool Thread::spawn(int stack_size, int core, int tag) {
   int result = pthread_create(reinterpret_cast<pthread_t*>(&_handle), null, &thread_start, void_cast(this));
   if (result != 0) {
     FATAL("pthread_create failed");
@@ -313,8 +313,8 @@ bool OS::use_virtual_memory(void* addr, uword sz) {
   uword end = address + sz;
   uword rounded = Utils::round_down(address, 4096);
   uword size = Utils::round_up(end - rounded, 4096);
-  void* result = VirtualAlloc(reinterpret_cast<void*>(address), size, MEM_COMMIT, PAGE_READWRITE);
-  if (result != reinterpret_cast<void*>(address)) FATAL("use_virtual_memory");
+  void* result = VirtualAlloc(reinterpret_cast<void*>(rounded), size, MEM_COMMIT, PAGE_READWRITE);
+  if (result != reinterpret_cast<void*>(rounded)) FATAL("use_virtual_memory");
   return true;
 }
 
@@ -340,11 +340,6 @@ void OS::free_block(ProgramBlock* block) {
 Block* OS::allocate_block() {
   void* result = _aligned_malloc(TOIT_PAGE_SIZE, TOIT_PAGE_SIZE);
   return (result == null) ? null : new (result) Block();
-}
-
-ProgramBlock* OS::allocate_program_block() {
-  void* result = _aligned_malloc(TOIT_PAGE_SIZE, TOIT_PAGE_SIZE);
-  return (result == null) ? null : new (result) ProgramBlock();
 }
 
 void OS::set_writable(ProgramBlock* block, bool value) {

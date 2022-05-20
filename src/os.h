@@ -82,7 +82,7 @@ class Thread {
   static void ensure_system_thread();
 
   // Returns true for success, false for malloc failure.
-  bool spawn(int stack_size = 0, int core = -1);
+  bool spawn(int stack_size = 0, int core = -1, int tag = -1);
   void run();  // Run on current thread.
 
   void join();
@@ -225,7 +225,6 @@ class OS {
   static void free_pages(void* address, uword size);
 
   static Block* allocate_block();
-  static ProgramBlock* allocate_program_block();
   static void free_block(Block* block);
   static void free_block(ProgramBlock* block);
   static void set_writable(ProgramBlock* block, bool value);

@@ -1,4 +1,4 @@
-// Copyright (c) 2016, the Dartino project authors. Please see the AUTHORS file
+// Copyright (c) 2022, the Dartino project authors. Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE.md file.
 
@@ -148,7 +148,7 @@ restart:
         return dest;
       }
       *dest_table = dest.address;
-      dest.address += pop_count(*mark_bits) << WORD_SHIFT;
+      dest.address += Utils::popcount(*mark_bits) << WORD_SHIFT;
       src += LINE_SIZE;
       mark_bits++;
       dest_table++;

@@ -36,7 +36,7 @@ BLEEventSource* BLEEventSource::_instance = null;
 
 BLEEventSource::BLEEventSource()
     : LazyEventSource("BLE", 1)
-    , Thread("BLE") {
+    , Thread("BLEEventSource") {
   _instance = this;
 }
 
@@ -50,7 +50,7 @@ bool BLEEventSource::start() {
   ASSERT(_resources_changed == null);
   _resources_changed = OS::allocate_condition_variable(mutex());
   if (_resources_changed == null) return false;
-  if (!spawn()) {
+  if (!spawn(3*KB)) {
     OS::dispose(_resources_changed);
     _resources_changed = null;
     return false;
@@ -69,6 +69,7 @@ void BLEEventSource::stop() {
   }
 
   join();
+
   OS::dispose(_resources_changed);
   _resources_changed = null;
 }
@@ -79,8 +80,6 @@ void BLEEventSource::entry() {
 
   while (!_stop) {
     if (_should_run) {
-      nimble_port_init();
-
       _running = true;
       OS::signal(_resources_changed);
 
@@ -128,7 +127,8 @@ void BLEEventSource::on_unregister_resource(Locker& locker, Resource* r) {
       }
       break;
     case BLEResource::GATT:
-      ble_gap_terminate(reinterpret_cast<GATTResource*>(ble)->handle(), 0);
+      // The GATT resources will be disconnected when we shut down the
+      // NimBLE stack.
       break;
   }
 }

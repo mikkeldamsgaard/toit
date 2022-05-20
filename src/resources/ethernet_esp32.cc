@@ -15,7 +15,7 @@
 
 #include "../top.h"
 
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_FREERTOS) && defined(CONFIG_TOIT_ENABLE_ETHERNET)
 
 #include <esp_eth.h>
 
@@ -133,6 +133,7 @@ class IPEvents : public SystemResource {
 
 uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t state) {
   SystemEvent* system_event = reinterpret_cast<SystemEvent*>(data);
+  printf("event: system_event->base=%s, system_event->id=%d\n", system_event->base, system_event->id);
   if (system_event->base == ETH_EVENT) {
     switch (system_event->id) {
       case ETHERNET_EVENT_CONNECTED:
@@ -281,6 +282,7 @@ PRIMITIVE(init_spi) {
   eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
   mac_config.smi_mdc_gpio_num = -1;
   mac_config.smi_mdio_gpio_num = -1;
+  mac_config.rx_task_stack_size = 4096;
   eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
   phy_config.reset_gpio_num = -1;
 

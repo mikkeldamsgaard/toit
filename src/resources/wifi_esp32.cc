@@ -14,8 +14,10 @@
 // directory of this repository.
 
 #include "../top.h"
+#include "../primitive.h"
+#include "../process.h"
 
-#ifdef TOIT_FREERTOS
+#if defined(TOIT_FREERTOS)
 
 #include <esp_wifi.h>
 #include <nvs_flash.h>
@@ -25,15 +27,14 @@
 #include "../rtc_memory_esp32.h"
 #include "../objects.h"
 #include "../objects_inline.h"
-#include "../process.h"
-#include "../primitive.h"
 #include "../resource_pool.h"
 #include "../vm.h"
 
 #include "../event_sources/system_esp32.h"
 
-namespace toit {
 
+namespace toit {
+#if defined(CONFIG_TOIT_ENABLE_WIFI)
 enum {
   WIFI_CONNECTED    = 1 << 0,
   WIFI_DHCP_SUCCESS = 1 << 1,
@@ -212,6 +213,7 @@ uint32_t WifiResourceGroup::on_event(Resource* resource, word data, uint32_t sta
 MODULE_IMPLEMENTATION(wifi, MODULE_WIFI)
 
 PRIMITIVE(init) {
+  printf("wifi_init\n");
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + WIFI_MALLOC_TAG);
   ByteArray* proxy = process->object_heap()->allocate_proxy();
   if (proxy == null) ALLOCATION_FAILED;
@@ -259,6 +261,7 @@ PRIMITIVE(init) {
 }
 
 PRIMITIVE(close) {
+  printf("wifi_close\n");
   ARGS(WifiResourceGroup, group);
   group->tear_down();
   group_proxy->clear_external_address();
@@ -266,6 +269,8 @@ PRIMITIVE(close) {
 }
 
 PRIMITIVE(connect) {
+  printf("wifi_connect\n");
+
   ARGS(WifiResourceGroup, group, cstring, ssid, cstring, password);
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + WIFI_MALLOC_TAG);
 
@@ -292,6 +297,8 @@ PRIMITIVE(connect) {
 }
 
 PRIMITIVE(setup_ip) {
+  printf("setup_ip\n");
+
   ARGS(WifiResourceGroup, group);
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + WIFI_MALLOC_TAG);
 
@@ -309,6 +316,7 @@ PRIMITIVE(setup_ip) {
 
 
 PRIMITIVE(disconnect) {
+  printf("setup_disconnct\n");
   ARGS(WifiResourceGroup, group, WifiEvents, wifi);
 
   group->unregister_resource(wifi);
@@ -317,6 +325,7 @@ PRIMITIVE(disconnect) {
 }
 
 PRIMITIVE(disconnect_reason) {
+  printf("setup_disconnct_reason\n");
   ARGS(WifiEvents, wifi);
   switch (wifi->disconnect_reason()) {
     case WIFI_REASON_ASSOC_EXPIRE:
@@ -338,17 +347,20 @@ PRIMITIVE(disconnect_reason) {
 }
 
 PRIMITIVE(get_ip) {
+  printf("get_ip\n");
+
   ARGS(IPEvents, ip);
   return process->allocate_string_or_error(ip->ip());
 }
 
 PRIMITIVE(get_rssi) {
+  printf("get_rssi\n");
+
   ARGS(WifiResourceGroup, wifi);
   int rssi = wifi->rssi();
   if (rssi == 0) return process->program()->null_object();
   return Smi::from(rssi);
 }
-
+#endif
 } // namespace toit
-
 #endif // TOIT_FREERTOS

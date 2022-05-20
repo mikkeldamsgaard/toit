@@ -264,8 +264,9 @@ void Thread::_boot() {
   vTaskDelete(null);
 }
 
-bool Thread::spawn(int stack_size, int core) {
-  HeapTagScope scope(ITERATE_CUSTOM_TAGS + THREAD_SPAWN_MALLOC_TAG);
+bool Thread::spawn(int stack_size, int core, int tag) {
+  if (tag == -1) tag = THREAD_SPAWN_MALLOC_TAG;
+  HeapTagScope scope(ITERATE_CUSTOM_TAGS + tag);
   ThreadData* thread = _new ThreadData();
   if (thread == null) return false;
   thread->terminated = xSemaphoreCreateBinary();
@@ -352,7 +353,7 @@ void OS::free_block(Block* block) {
 void* OS::allocate_pages(uword size) {
   size = Utils::round_up(size, TOIT_PAGE_SIZE);
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + TOIT_HEAP_MALLOC_TAG);
-  void* allocation = heap_caps_aligned_alloc(size, TOIT_PAGE_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+  void* allocation = heap_caps_aligned_alloc(TOIT_PAGE_SIZE, size, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
   return allocation;
 }
 
@@ -382,13 +383,18 @@ bool OS::use_virtual_memory(void* address, uword size) {
 void OS::unuse_virtual_memory(void* address, uword size) {}
 
 OS::HeapMemoryRange OS::get_heap_memory_range() {
+  HeapMemoryRange range;
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+  range.address = reinterpret_cast<void*>(0x3FCA0000);
+  range.size = 512 * KB;
+#else
   //                           DRAM range            IRAM range
   // Internal SRAM 2 200k 3ffa_e000 - 3ffe_0000
   // Internal SRAM 0 192k 3ffe_0000 - 4000_0000    4007_0000 - 400a_0000
   // Internal SRAM 1 128k                          400a_0000 - 400c_0000
-  HeapMemoryRange range;
   range.address = reinterpret_cast<void*>(0x3ffae000);
-  range.size = 392 * KB;
+  range.size = 384 * KB;
+#endif
   return range;
 }
 
@@ -411,7 +417,13 @@ void OS::out_of_memory(const char* reason) {
   if (true) {
     panic_put_string(reason);
     panic_put_string("; restarting to attempt to recover.\n");
-    esp_restart();
+
+    // We use deep sleep here to preserve the RTC memory that contains our
+    // bookkeeping data for out-of-memory situations. Using esp_restart()
+    // would clear the RTC memory.
+    esp_sleep_enable_timer_wakeup(100000);  // 100 ms.
+    RtcMemory::before_deep_sleep();
+    esp_deep_sleep_start();
   }
 
 #ifdef TOIT_CMPCTMALLOC
@@ -440,6 +452,7 @@ void OS::out_of_memory(const char* reason) {
 
 #endif // def TOIT_CMPCTMALLOC
 
+  // TODO(kasper): This should probably be avoided because it clears RTC memory.
   esp_restart();
 }
 
@@ -541,6 +554,10 @@ class HeapSummaryPage {
       case THREAD_SPAWN_MALLOC_TAG: return "thread spawn";
       case NULL_MALLOC_TAG: return "null tag";
       case WIFI_MALLOC_TAG: return "wifi";
+      case CUSTOM_THREAD_MALLOC_TAG: return "custom thread";
+      case CUSTOM_OTHER_MALLOC_TAG: return "custom other";
+      case CODEC_MALLOC_TAG: return "codec";
+      case I2S_MALLOC_TAG: return "i2s";
     }
     return "unknown";
   }
@@ -600,8 +617,10 @@ class HeapSummaryCollector {
         ? current_page_->register_user(tag, size)
         : HeapSummaryPage::compute_type(tag);
     // Disregard IRAM allocations.
-    if (reinterpret_cast<uword>(address) < 0x40000000) {
-      sizes_[type] += size;
+    if (reinterpret_cast<uword>(address) < SOC_IRAM_LOW) {
+      if (reinterpret_cast<uword>(address) > SOC_EXTRAM_DATA_HIGH) {
+        sizes_[type] += size;
+      }
       counts_[type]++;
     }
   }
@@ -632,7 +651,7 @@ class HeapSummaryCollector {
     }
 
     multi_heap_info_t info;
-    heap_caps_get_info(&info, MALLOC_CAP_8BIT);
+    heap_caps_get_info(&info, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
     int capacity_bytes = info.total_allocated_bytes + info.total_free_bytes;
     int used_bytes = size * 100 / capacity_bytes;
     printf("  └───────────┴─────────┴───────────────────────┘\n");

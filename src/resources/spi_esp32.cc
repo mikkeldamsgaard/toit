@@ -132,7 +132,11 @@ PRIMITIVE(init) {
     esp_err_t err;
   } args {
     .host_device = host_device,
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+    .dma_chan = SPI_DMA_CH_AUTO
+#else
     .dma_chan = dma_chan
+#endif
   };
   SystemEventSource::instance()->run([&]() -> void {
     args.err = spi_bus_initialize(args.host_device, &conf, args.dma_chan);

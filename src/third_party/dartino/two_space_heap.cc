@@ -1,4 +1,4 @@
-// Copyright (c) 2014, the Dartino project authors. Please see the AUTHORS file
+// Copyright (c) 2022, the Dartino project authors. Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE.md file.
 
@@ -20,6 +20,7 @@ TwoSpaceHeap::TwoSpaceHeap(Program* program, ObjectHeap* process_heap, Chunk* ch
       old_space_(program, this),
       semi_space_(program, chunk) {
   semi_space_size_ = TOIT_PAGE_SIZE;
+  if (chunk) water_mark_ = chunk->start();
 }
 
 uword TwoSpaceHeap::max_expansion() {
@@ -31,13 +32,8 @@ uword TwoSpaceHeap::max_expansion() {
   return old_space()->used() - limit;
 }
 
-bool TwoSpaceHeap::initialize() {
-  Chunk* chunk = ObjectMemory::allocate_chunk(&semi_space_, semi_space_size_);
-  if (chunk == NULL) return false;
-  semi_space_.append(chunk);
-  semi_space_.update_base_and_limit(chunk, chunk->start());
-  water_mark_ = chunk->start();
-  return true;
+Process* TwoSpaceHeap::process() {
+  return process_heap_->owner();
 }
 
 TwoSpaceHeap::~TwoSpaceHeap() {
@@ -121,15 +117,19 @@ void SemiSpace::start_scavenge() {
 
 #ifndef LEGACY_GC
 
-void TwoSpaceHeap::collect_new_space() {
-  SemiSpace* from = space();
+void TwoSpaceHeap::collect_new_space(bool try_hard) {
+  SemiSpace* from = new_space();
 
   uint64 start = OS::get_monotonic_time();
+
+  // Might get set during scavenge if we fail to promote to a full old-space
+  // that can't be expanded.
+  malloc_failed_ = false;
 
   total_bytes_allocated_ += from->used();
 
   if (has_empty_new_space()) {
-    collect_old_space_if_needed(false);
+    collect_old_space_if_needed(try_hard, try_hard);
     if (Flags::tracegc) {
       uint64 end = OS::get_monotonic_time();
       printf("Old-space-only GC: %dus\n", static_cast<int>(end - start));
@@ -141,7 +141,7 @@ void TwoSpaceHeap::collect_new_space() {
   from->flush();
 
 #ifdef DEBUG
-  if (Flags::validate_heap) old_space()->verify();
+  if (Flags::validate_heap) validate();
 #endif
 
   uword old_used = old_space()->used();
@@ -192,7 +192,14 @@ void TwoSpaceHeap::collect_new_space() {
     int f = from_used;
     int t = to_used;
     int old = old_space()->used();
-    printf("%p Scavenge: %d%c->%d%c (old-gen %d%c) %dus\n",
+
+    uword overhead = old_space()->size() - old;
+
+    char buffer[30];
+    buffer[sizeof(buffer) - 1] = '\0';
+    snprintf(buffer, sizeof(buffer) - 1, " +%dk overhead", static_cast<int>(overhead) >> 10);
+
+    printf("%p Scavenge: %d%c->%d%c (old-gen %d%c%s) %dus\n",
         process_heap_->owner(),
         (f >> 10) ? (f >> 10) : f,
         (f >> 10) ? 'k' : 'b',
@@ -200,6 +207,7 @@ void TwoSpaceHeap::collect_new_space() {
         (t >> 10) ? 'k' : 'b',
         (old >> 10) ? (old >> 10) : old,
         (old >> 10) ? 'k' : 'b',
+        (overhead >= TOIT_PAGE_SIZE) ? buffer : "",
         static_cast<int>(end - start));
   }
 
@@ -214,56 +222,62 @@ void TwoSpaceHeap::collect_new_space() {
     old_space()->report_new_space_progress(progress);
   }
 
-#ifdef DEBUG
-  if (Flags::validate_heap) old_space()->verify();
-#endif
-
-  collect_old_space_if_needed(trigger_old_space_gc);
+  collect_old_space_if_needed(try_hard, trigger_old_space_gc);
 }
 
 uword TwoSpaceHeap::total_bytes_allocated() {
   uword result = total_bytes_allocated_;
-  result += space()->used();
+  result += new_space()->used();
   return result;
 }
 
-void TwoSpaceHeap::collect_old_space_if_needed(bool force) {
-  if (force || old_space()->needs_garbage_collection()) {
-    old_space()->flush();
-    collect_old_space();
+void TwoSpaceHeap::collect_old_space_if_needed(bool force_compact, bool force) {
 #ifdef DEBUG
-    if (Flags::validate_heap) old_space()->verify();
-#endif
-  }
-}
-
-void TwoSpaceHeap::validate() {
-#ifdef DEBUG
-  // TODO (erik).
-#endif
-}
-
-void TwoSpaceHeap::collect_old_space() {
   if (Flags::validate_heap) {
     validate();
+    old_space()->validate_before_mark_sweep(OLD_SPACE_PAGE, false);
+    new_space()->validate_before_mark_sweep(NEW_SPACE_PAGE, true);
   }
+#endif
+  if (force || force_compact || old_space()->needs_garbage_collection()) {
+    ASSERT(old_space()->is_flushed());
+    ASSERT(new_space()->is_flushed());
+    collect_old_space(force_compact);
+  }
+}
+
+#ifdef DEBUG
+void TwoSpaceHeap::validate() {
+  new_space()->validate();
+  old_space()->validate();
+}
+#endif
+
+void TwoSpaceHeap::collect_old_space(bool force_compact) {
 
   uint64 start = OS::get_monotonic_time();
-  uword old_size = old_space()->used();
+  uword old_used = old_space()->used();
 
-  bool compacted = perform_garbage_collection();
+  bool compacted = perform_garbage_collection(force_compact);
 
   if (Flags::tracegc) {
     uint64 end = OS::get_monotonic_time();
-    int f = old_size;
+    int f = old_used;
     int t = old_space()->used();
-    printf("%p Mark-sweep%s: %d%c->%d%c, %dus\n",
+    uword overhead = old_space()->size() - t;
+
+    char buffer[30];
+    buffer[sizeof(buffer) - 1] = '\0';
+    snprintf(buffer, sizeof(buffer) - 1, " +%dk overhead", static_cast<int>(overhead) >> 10);
+
+    printf("%p Mark-sweep%s: %d%c->%d%c%s %dus\n",
         process_heap_->owner(),
         compacted ? "-compact" : "",
         (f >> 10) ? (f >> 10) : f,
         (f >> 10) ? 'k' : 'b',
         (t >> 10) ? (t >> 10) : t,
         (t >> 10) ? 'k' : 'b',
+        (overhead >= TOIT_PAGE_SIZE) ? buffer : "",
         static_cast<int>(end - start));
   }
 
@@ -271,35 +285,37 @@ void TwoSpaceHeap::collect_old_space() {
       static_cast<uword>(TOIT_PAGE_SIZE),
       static_cast<uword>(old_space()->used() * 1.5)));
 
+#ifdef DEBUG
   if (Flags::validate_heap) {
     validate();
   }
+#endif
   // TODO(Erik): The heuristics need tidying.
   old_space()->adjust_allocation_budget(0);
 }
 
-bool TwoSpaceHeap::perform_garbage_collection() {
+bool TwoSpaceHeap::perform_garbage_collection(bool force_compact) {
   // Mark all reachable objects.  We mark all live objects in new-space too, to
   // detect liveness paths that go through new-space, but we just clear the
   // mark bits afterwards.  Dead objects in new-space are only cleared in a
   // new-space GC (scavenge).
-  SemiSpace* new_space = space();
+  SemiSpace* semi_space = new_space();
   MarkingStack stack(program_);
-  MarkingVisitor marking_visitor(new_space, &stack);
+  MarkingVisitor marking_visitor(semi_space, &stack);
 
   process_heap_->iterate_roots(&marking_visitor);
 
-  stack.process(&marking_visitor, old_space(), new_space);
+  stack.process(&marking_visitor, old_space(), semi_space);
 
   process_heap_->process_registered_finalizers(&marking_visitor, old_space());
 
-  stack.process(&marking_visitor, old_space(), new_space);
+  stack.process(&marking_visitor, old_space(), semi_space);
 
   process_heap_->process_registered_vm_finalizers(&marking_visitor, old_space());
 
-  stack.process(&marking_visitor, old_space(), new_space);
+  stack.process(&marking_visitor, old_space(), semi_space);
 
-  bool compact = !old_space()->compacting();
+  bool compact = force_compact || !old_space()->compacting();
 
   if (!compact) {
     // If the last GC was compacting we don't have fragmentation, so it
@@ -315,28 +331,24 @@ bool TwoSpaceHeap::perform_garbage_collection() {
   }
 
 #ifdef DEBUG
-  if (Flags::validate_heap) old_space()->verify();
+  if (Flags::validate_heap) validate();
 #endif
 
   return compact;
 }
 
 void TwoSpaceHeap::sweep_heap() {
-  SemiSpace* new_space = space();
+  SemiSpace* semi_space = new_space();
 
   old_space()->set_compacting(false);
 
-  old_space()->process_weak_pointers();
-
   // Sweep over the old-space and rebuild the freelist.
-  SweepingVisitor sweeping_visitor(program_, old_space());
-  old_space()->iterate_objects(&sweeping_visitor);
+  uword used_after = old_space()->sweep();
 
   // These are only needed during the mark phase, we can clear them without
   // looking at them.
-  new_space->clear_mark_bits();
+  semi_space->clear_mark_bits();
 
-  uword used_after = sweeping_visitor.used();
   old_space()->set_used(used_after);
   old_space()->set_used_after_last_gc(used_after);
 }
@@ -365,17 +377,13 @@ class EverythingIsAlive : public LivenessOracle {
 };
 
 void TwoSpaceHeap::compact_heap() {
-  SemiSpace* new_space = space();
+  SemiSpace* semi_space = new_space();
 
   old_space()->set_compacting(true);
 
   old_space()->compute_compaction_destinations();
 
   old_space()->clear_free_list();
-
-  // Weak processing when the destination addresses have been calculated, but
-  // before they are moved (which ruins the liveness data).
-  old_space()->process_weak_pointers();
 
   old_space()->zap_object_starts();
 
@@ -385,10 +393,9 @@ void TwoSpaceHeap::compact_heap() {
   uword used_after = compacting_visitor.used();
   old_space()->set_used(used_after);
   old_space()->set_used_after_last_gc(used_after);
-  fix.set_source_address(0);
 
   HeapObjectPointerVisitor new_space_visitor(program_, &fix);
-  new_space->iterate_objects(&new_space_visitor);
+  semi_space->iterate_objects(&new_space_visitor);
 
   process_heap_->iterate_roots(&fix);
   // At this point dead objects have been cleared out of the finalizer lists.
@@ -396,7 +403,7 @@ void TwoSpaceHeap::compact_heap() {
   process_heap_->process_registered_finalizers(&fix, &yes);
   process_heap_->process_registered_vm_finalizers(&fix, &yes);
 
-  new_space->clear_mark_bits();
+  semi_space->clear_mark_bits();
   old_space()->clear_mark_bits();
   old_space()->mark_chunk_ends_free();
 }

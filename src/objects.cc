@@ -150,6 +150,11 @@ FreeListRegion* FreeListRegion::create_at(uword start, uword size) {
     self->_set_header(Smi::from(FREE_LIST_REGION_CLASS_ID), FREE_LIST_REGION_TAG);
     self->_word_at_put(SIZE_OFFSET, size);
     self->_at_put(NEXT_OFFSET, null);
+#ifdef DEBUG
+    for (uword i = MINIMUM_SIZE; i < size; i += WORD_SIZE) {
+      self->_word_at_put(i, 0xdeadbea7);
+    }
+#endif
     return self;
   }
   for (uword i = 0; i < size; i += WORD_SIZE) {
@@ -157,6 +162,12 @@ FreeListRegion* FreeListRegion::create_at(uword start, uword size) {
     one_word->_set_header(Smi::from(SINGLE_FREE_WORD_CLASS_ID), SINGLE_FREE_WORD_TAG);
   }
   return null;
+}
+
+Object* FreeListRegion::single_free_word_header() {
+  uword header = SINGLE_FREE_WORD_CLASS_ID;
+  header = (header << CLASS_TAG_BIT_SIZE) | SINGLE_FREE_WORD_TAG;
+  return Smi::from(header);
 }
 
 class PointerRootCallback : public RootCallback {
@@ -470,6 +481,8 @@ void ByteArray::read_content(SnapshotReader* st, int len) {
   }
 }
 
+#endif  // TOIT_FREERTOS
+
 word ByteArray::max_internal_size() {
   return Utils::max(max_internal_size_in_process(), max_internal_size_in_program());
 }
@@ -477,7 +490,5 @@ word ByteArray::max_internal_size() {
 word String::max_internal_size() {
   return Utils::max(max_internal_size_in_process(), max_internal_size_in_program());
 }
-
-#endif  // TOIT_FREERTOS
 
 }  // namespace toit
