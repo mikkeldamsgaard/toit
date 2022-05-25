@@ -27,7 +27,7 @@
 #endif
 
 // Use compacting generational GC.
-// #define LEGACY_GC 1
+//#define LEGACY_GC 1
 // #define TOIT_GC_LOGGING 1
 // Support for profiling configuration
 #if defined(PROF)

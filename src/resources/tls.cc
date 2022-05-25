@@ -13,7 +13,7 @@
 // The license can be found in the file `LICENSE` in the top level
 // directory of this repository.
 
-#include "top.h"
+#include "../top.h"
 
 #if defined(CONFIG_TOIT_ENABLE_IP)
 #include <mbedtls/error.h>

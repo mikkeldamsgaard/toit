@@ -249,8 +249,6 @@ Chunk* ObjectMemory::allocate_chunk(Space* owner, uword size) {
   if (memory == null) return null;
   if (reinterpret_cast<uword>(memory) < lowest ||
       reinterpret_cast<uword>(memory) - lowest + size > GcMetadata::heap_extent()) {
-    fprintf(stderr, "memory %x, lowest %x, highest: %x\n", (uint32_t)memory, lowest,GcMetadata::heap_extent());
-
     FATAL("Toit heap outside expected range");
   }
 
