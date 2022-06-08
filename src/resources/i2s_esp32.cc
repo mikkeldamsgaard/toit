@@ -189,7 +189,7 @@ PRIMITIVE(create) {
 
   i2s_config_t config = {
     .mode = static_cast<i2s_mode_t>(mode),
-    .sample_rate = (uint32_t)sample_rate,
+    .sample_rate = static_cast<uint32_t>(sample_rate),
     .bits_per_sample = static_cast<i2s_bits_per_sample_t>(bits_per_sample),
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,

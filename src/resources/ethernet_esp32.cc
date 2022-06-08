@@ -141,6 +141,7 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
         break;
 
       case ETHERNET_EVENT_DISCONNECTED:
+        //state &= ~ETHERNET_CONNECTED;
         break;
 
       case ETHERNET_EVENT_START:

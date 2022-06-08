@@ -385,7 +385,7 @@ void OS::unuse_virtual_memory(void* address, uword size) {}
 OS::HeapMemoryRange OS::get_heap_memory_range() {
   HeapMemoryRange range;
 #ifdef CONFIG_IDF_TARGET_ESP32S3
-  range.address = reinterpret_cast<void*>(0x3FCA0000);
+  range.address = reinterpret_cast<void*>(0x3FC90000);
   range.size = 512 * KB;
 #else
   //                           DRAM range            IRAM range

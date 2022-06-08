@@ -1003,20 +1003,27 @@ PRIMITIVE(notify_characteristics_value) {
 
   if (resource->is_notify_enabled() || resource->is_indicate_enabled()) {
     struct os_mbuf* om;
-    if (!object_to_mbuf(process, value, &om)) WRONG_TYPE;
-
+    int err_step = 0;
     int err = ESP_OK;
     if (resource->is_notify_enabled()) {
+      if (!object_to_mbuf(process, value, &om)) WRONG_TYPE;
       err = ble_gattc_notify_custom(resource->conn_handle(), resource->nimble_value_handle(), om);
+      err_step = 1;
     }
 
     if (err == ESP_OK && resource->is_indicate_enabled()) {
+      if (!object_to_mbuf(process, value, &om)) WRONG_TYPE;
       err = ble_gattc_indicate_custom(resource->conn_handle(), resource->nimble_value_handle(), om);
+      err_step = 2;
     }
 
     if (err != ESP_OK) {
-      if (om != null) os_mbuf_free(om);
-      return Primitive::os_error(err, process);
+      Error* error = null;
+      char err_str[15];
+      sprintf(err_str,"BLE:%d.%d.%d.%d",err,err_step, resource->is_notify_enabled(), resource->is_indicate_enabled());
+      String* result = process->allocate_string(err_str, &error);
+      if (result == null) return error;
+      return Error::from(result);
     }
   }
 
