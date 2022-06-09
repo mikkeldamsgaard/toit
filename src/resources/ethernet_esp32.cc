@@ -284,6 +284,7 @@ PRIMITIVE(init_spi) {
   mac_config.smi_mdc_gpio_num = -1;
   mac_config.smi_mdio_gpio_num = -1;
   mac_config.rx_task_stack_size = 4096;
+  mac_config.flags |= ETH_MAC_FLAG_PIN_TO_CORE;
   eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
   phy_config.reset_gpio_num = -1;
 

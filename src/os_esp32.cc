@@ -353,6 +353,11 @@ void OS::free_block(Block* block) {
 void* OS::allocate_pages(uword size) {
   size = Utils::round_up(size, TOIT_PAGE_SIZE);
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + TOIT_HEAP_MALLOC_TAG);
+
+  multi_heap_info_t mem_info;
+  heap_caps_get_info(&mem_info, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
+  if (mem_info.total_free_bytes < 8192) return null;
+
   void* allocation = heap_caps_aligned_alloc(TOIT_PAGE_SIZE, size, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
   return allocation;
 }
