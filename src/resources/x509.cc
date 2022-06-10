@@ -24,7 +24,7 @@
 #include "tls.h"
 #include "x509.h"
 
-#ifdef CONFIG_TOIT_CRYPTO
+#if !defined(TOIT_FREERTOS) || defined(CONFIG_TOIT_CRYPTO)
 namespace toit {
 
 Object* X509ResourceGroup::parse(Process* process, const uint8_t* encoded, size_t encoded_size) {
@@ -93,11 +93,11 @@ PRIMITIVE(parse) {
 
   const uint8_t* data = null;
   size_t length = 0;
-  if (input->is_byte_array()) {
+  if (is_byte_array(input)) {
     ByteArray::Bytes bytes(ByteArray::cast(input));
     data = bytes.address();
     length = bytes.length();
-  } else if (input->is_string()) {
+  } else if (is_string(input)) {
     // For PEM format, give a null terminated byte array (and the size of the
     // full array), otherwise parsing will fail.
     String* str = String::cast(input);

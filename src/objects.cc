@@ -26,13 +26,13 @@
 namespace toit {
 
 bool Object::byte_content(Program* program, const uint8** content, int* length, BlobKind strings_only) {
-  if (is_string()) {
+  if (is_string(this)) {
     String::Bytes bytes(String::cast(this));
     *length = bytes.length();
     *content = bytes.address();
     return true;
   }
-  if (strings_only == STRINGS_OR_BYTE_ARRAYS && is_byte_array()) {
+  if (strings_only == STRINGS_OR_BYTE_ARRAYS && is_byte_array(this)) {
     ByteArray* byte_array = ByteArray::cast(this);
     // External byte arrays can have structs in them. This is captured in the external tag.
     // We only allow extracting the byte content from an external byte arrays iff it is tagged with RawByteType.
@@ -42,7 +42,7 @@ bool Object::byte_content(Program* program, const uint8** content, int* length, 
     *content = bytes.address();
     return true;
   }
-  if (is_instance()) {
+  if (is_instance(this)) {
     auto instance = Instance::cast(this);
     auto class_id = instance->class_id();
     if (strings_only == STRINGS_OR_BYTE_ARRAYS && class_id == program->byte_array_cow_class_id()) {
@@ -52,10 +52,10 @@ bool Object::byte_content(Program* program, const uint8** content, int* length, 
       auto wrapped = instance->at(0);
       auto from = instance->at(1);
       auto to = instance->at(2);
-      if (!wrapped->is_heap_object()) return false;
+      if (!is_heap_object(wrapped)) return false;
       // TODO(florian): we could eventually accept larger integers here.
-      if (!from->is_smi()) return false;
-      if (!to->is_smi()) return false;
+      if (!is_smi(from)) return false;
+      if (!is_smi(to)) return false;
       int from_value = Smi::cast(from)->value();
       int to_value = Smi::cast(to)->value();
       bool inner_success = HeapObject::cast(wrapped)->byte_content(program, content, length, strings_only);
@@ -150,11 +150,6 @@ FreeListRegion* FreeListRegion::create_at(uword start, uword size) {
     self->_set_header(Smi::from(FREE_LIST_REGION_CLASS_ID), FREE_LIST_REGION_TAG);
     self->_word_at_put(SIZE_OFFSET, size);
     self->_at_put(NEXT_OFFSET, null);
-#ifdef DEBUG
-    for (uword i = MINIMUM_SIZE; i < size; i += WORD_SIZE) {
-      self->_word_at_put(i, 0xdeadbea7);
-    }
-#endif
     return self;
   }
   for (uword i = 0; i < size; i += WORD_SIZE) {
@@ -168,6 +163,19 @@ Object* FreeListRegion::single_free_word_header() {
   uword header = SINGLE_FREE_WORD_CLASS_ID;
   header = (header << CLASS_TAG_BIT_SIZE) | SINGLE_FREE_WORD_TAG;
   return Smi::from(header);
+}
+
+bool HeapObject::is_a_free_object() {
+  int tag = class_tag();
+  if (tag == FREE_LIST_REGION_TAG) {
+    ASSERT(class_id()->value() == FREE_LIST_REGION_CLASS_ID);
+    return true;
+  }
+  if (tag == SINGLE_FREE_WORD_TAG) {
+    ASSERT(class_id()->value() == SINGLE_FREE_WORD_CLASS_ID);
+    return true;
+  }
+  return false;
 }
 
 class PointerRootCallback : public RootCallback {
@@ -348,7 +356,7 @@ char* String::cstr_dup() {
 
 bool String::equals(Object* other) {
   if (this == other) return true;
-  if (!other->is_string()) return false;
+  if (!is_string(other)) return false;
   String* other_string = String::cast(other);
   if (hash_code() != other_string->hash_code()) return false;
   Bytes bytes(this);

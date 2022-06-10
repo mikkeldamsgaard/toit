@@ -239,7 +239,7 @@ class GcMetadata {
   static inline bool is_marked(HeapObject* object) {
     uword address = reinterpret_cast<uword>(object);
     address = (singleton_.mark_bits_bias_ + (address >> MARK_BITS_SHIFT)) & ~3;
-    uint32 mask = 1 << ((reinterpret_cast<uword>(object) >> WORD_SHIFT) & 31);
+    uint32 mask = 1u << ((reinterpret_cast<uword>(object) >> WORD_SHIFT) & 31);
     return (*reinterpret_cast<uint32*>(address) & mask) != 0;
   }
 
@@ -247,7 +247,7 @@ class GcMetadata {
   static INLINE bool mark_grey_if_not_marked(HeapObject* object) {
     uword address = reinterpret_cast<uword>(object);
     address = (singleton_.mark_bits_bias_ + (address >> MARK_BITS_SHIFT)) & ~3;
-    uint32 mask = 1 << ((reinterpret_cast<uword>(object) >> WORD_SHIFT) & 31);
+    uint32 mask = 1u << ((reinterpret_cast<uword>(object) >> WORD_SHIFT) & 31);
     uint32 bits = *reinterpret_cast<uint32*>(address);
     if ((bits & mask) != 0) return true;
     *reinterpret_cast<uint32*>(address) = bits | mask;
@@ -273,7 +273,7 @@ class GcMetadata {
   // stack.
   static inline void mark(HeapObject* object) {
     uint32* bits = mark_bits_for(object);
-    uint32 mask = 1 << ((reinterpret_cast<uword>(object) >> WORD_SHIFT) & 31);
+    uint32 mask = 1u << ((reinterpret_cast<uword>(object) >> WORD_SHIFT) & 31);
     *bits |= mask;
   }
 
@@ -295,16 +295,17 @@ class GcMetadata {
     int mask_shift = (reinterpret_cast<uword>(object) >> WORD_SHIFT) & mask_mask;
     uword size_in_words = size >> WORD_SHIFT;
     // Jump to the slow case routine to handle crossing an int32_t boundary.
-    // If we have unaligned access then this slow case never happens for
-    // objects < 24 words in size. Otherwise it can happen for small objects
-    // that straddle a 32-word boundary.
+    // This can happen even for small objects if they cross an int32_t boundary.
     if (mask_shift + size_in_words > 32) {
       slow_mark(object, size);
     } else {
-      // TODO: On 64 bit CPUs it's probably faster to do this without the ?:
-      // in a 64 bit register.  May also be worth trying a 32 entry lookup
-      // table.
-      uint32 mask = size_in_words == 32 ? 0xffffffff : ((1 << size_in_words) - 1);
+#ifdef BUILD_64
+      // Use a 64 bit mask to avoid checking for a shift distance of 32.
+      uint64 mask = 1;
+      mask = ((mask << size_in_words) - 1);
+#else
+      uint32 mask = size_in_words == 32 ? 0xffffffff : ((1u << size_in_words) - 1);
+#endif
       mask <<= mask_shift;
 
       uint32* bits = mark_bits_for(object);
@@ -351,14 +352,6 @@ class GcMetadata {
   // Unaligned, so cannot clash with a real object start.
   static const int NO_OBJECT_START = 2;
 
-#ifdef LEGACY_GC
-
-  inline static void record_start(uword address) {}
-  template<typename T>
-  inline static void insert_into_remembered_set(T address) {}
-
-#else  // not LEGACY_GC
-
   // We need to track the start of an object for each card, so that we can
   // iterate just part of the heap.  This does that for newly allocated objects
   // in old-space.  The cards are less than 256 bytes large (see the assert
@@ -374,13 +367,11 @@ class GcMetadata {
   // new-space.
   template<typename T>
   INLINE static void insert_into_remembered_set(T address) {
-    static_assert(sizeof(T) == sizeof(uword));
+    static_assert(sizeof(T) == sizeof(uword), "invalid type size");
     uword mark_byte = reinterpret_cast<uword>(address) >> CARD_SIZE_LOG_2;
     mark_byte += singleton_.remembered_set_bias_;
     *reinterpret_cast<uint8*>(mark_byte) = NEW_SPACE_POINTERS;
   }
-
-#endif  // not LEGACY_GC
 
   // May this card contain pointers from old-space to new-space?
   inline static bool is_marked_dirty(uword address) {

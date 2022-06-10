@@ -33,6 +33,7 @@
 #include "memory.h"
 #include "rtc_memory_esp32.h"
 #include "driver/uart.h"
+#include "utils.h"
 
 #include <soc/soc.h>
 #include <soc/uart_reg.h>
@@ -48,6 +49,11 @@
 #include "uuid.h"
 
 namespace toit {
+
+// Flags used to get memory for the Toit heap, which needs to be fast and 8-bit
+// capable.
+//static const int TOIT_HEAP_CAPS_FLAGS = MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+static const int TOIT_HEAP_CAPS_FLAGS = MALLOC_CAP_SPIRAM;
 
 void panic_put_char(char c) {
   while (((READ_PERI_REG(UART_STATUS_REG(CONFIG_ESP_CONSOLE_UART_NUM)) >> UART_TXFIFO_CNT_S)&UART_TXFIFO_CNT) >= 126) ;
@@ -145,10 +151,12 @@ class ConditionVariable {
     if (!_mutex->is_locked()) {
       FATAL("wait on unlocked mutex");
     }
-    int timeout_ticks = portMAX_DELAY;
-    if (timeout_in_ms > 0) {
-      timeout_ticks = timeout_in_ms / portTICK_PERIOD_MS;
-    }
+
+    // Use ceiling division to avoid rounding the ticks down and thus
+    // not waiting long enough.
+    int timeout_ticks = (timeout_in_ms > 0)
+        ? (timeout_in_ms + portTICK_PERIOD_MS - 1) / portTICK_PERIOD_MS
+        : portMAX_DELAY;
 
     ConditionVariableWaiter w = {
       .task = xTaskGetCurrentTaskHandle()
@@ -346,31 +354,20 @@ void OS::signal(ConditionVariable* condition_variable) { condition_variable->sig
 void OS::signal_all(ConditionVariable* condition_variable) { condition_variable->signal_all(); }
 void OS::dispose(ConditionVariable* condition_variable) { delete condition_variable; }
 
-void OS::free_block(Block* block) {
-  heap_caps_free(reinterpret_cast<void*>(block));
-}
-
 void* OS::allocate_pages(uword size) {
   size = Utils::round_up(size, TOIT_PAGE_SIZE);
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + TOIT_HEAP_MALLOC_TAG);
 
   multi_heap_info_t mem_info;
-  heap_caps_get_info(&mem_info, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
-  if (mem_info.total_free_bytes < 8192) return null;
+  heap_caps_get_info(&mem_info, TOIT_HEAP_CAPS_FLAGS);
+  if (mem_info.total_free_bytes < 16*KB) return null;
 
-  void* allocation = heap_caps_aligned_alloc(TOIT_PAGE_SIZE, size, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+  void* allocation = heap_caps_aligned_alloc(TOIT_PAGE_SIZE, size, TOIT_HEAP_CAPS_FLAGS);
   return allocation;
 }
 
 void OS::free_pages(void* address, uword size) {
   heap_caps_free(address);
-}
-
-Block* OS::allocate_block() {
-  void* allocation = allocate_pages(TOIT_PAGE_SIZE);
-  if (allocation == null) return null;
-  ASSERT(Utils::is_aligned(reinterpret_cast<intptr_t>(allocation), TOIT_PAGE_SIZE));
-  return new (allocation) Block();
 }
 
 void* OS::grab_virtual_memory(void* address, uword size) {
@@ -388,17 +385,29 @@ bool OS::use_virtual_memory(void* address, uword size) {
 void OS::unuse_virtual_memory(void* address, uword size) {}
 
 OS::HeapMemoryRange OS::get_heap_memory_range() {
+  multi_heap_info_t info {};
+  heap_caps_get_info(&info, TOIT_HEAP_CAPS_FLAGS);
+
+  // Older esp-idfs or mallocs other than cmpctmalloc won't set the
+  // lowest_address and highest_address fields.
+  if (info.lowest_address != null) {
+    HeapMemoryRange range;
+    range.address = info.lowest_address;
+    range.size = reinterpret_cast<uword>(info.highest_address) - reinterpret_cast<uword>(info.lowest_address);
+    return range;
+  }
+
   HeapMemoryRange range;
 #ifdef CONFIG_IDF_TARGET_ESP32S3
-  range.address = reinterpret_cast<void*>(0x3FC90000);
+  range.address = reinterpret_cast<void*>(0x3fc90000);
   range.size = 512 * KB;
 #else
   //                           DRAM range            IRAM range
   // Internal SRAM 2 200k 3ffa_e000 - 3ffe_0000
   // Internal SRAM 0 192k 3ffe_0000 - 4000_0000    4007_0000 - 400a_0000
   // Internal SRAM 1 128k                          400a_0000 - 400c_0000
-  range.address = reinterpret_cast<void*>(0x3ffae000);
-  range.size = 384 * KB;
+  range.address = reinterpret_cast<void*>(0x3ffc0000);
+  range.size = 256 * KB;
 #endif
   return range;
 }

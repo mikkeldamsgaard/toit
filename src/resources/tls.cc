@@ -15,7 +15,7 @@
 
 #include "../top.h"
 
-#if defined(CONFIG_TOIT_ENABLE_IP)
+#if !defined(TOIT_FREERTOS) || defined(CONFIG_TOIT_ENABLE_IP)
 #include <mbedtls/error.h>
 #include <mbedtls/pem.h>
 #include <mbedtls/platform.h>
@@ -309,7 +309,7 @@ PRIMITIVE(set_outgoing) {
   Object* null_object = process->program()->null_object();
   if (outgoing == null_object) {
     if (fullness != 0) INVALID_ARGUMENT;
-  } else if (outgoing->is_byte_array()) {
+  } else if (is_byte_array(outgoing)) {
     ByteArray::Bytes data_bytes(ByteArray::cast(outgoing));
     if (fullness < 0 || fullness >= data_bytes.length()) INVALID_ARGUMENT;
   } else {
@@ -499,7 +499,7 @@ PRIMITIVE(add_certificate) {
 
 static int toit_tls_send(void* ctx, const unsigned char* buf, size_t len) {
   auto socket = unvoid_cast<MbedTLSSocket*>(ctx);
-  if (!socket->outgoing_packet()->is_byte_array()) {
+  if (!is_byte_array(socket->outgoing_packet())) {
     return MBEDTLS_ERR_SSL_WANT_WRITE;
   }
   ByteArray::Bytes bytes(static_cast<ByteArray*>(socket->outgoing_packet()));

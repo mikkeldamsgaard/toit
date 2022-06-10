@@ -38,6 +38,7 @@ namespace toit {
   M(spi_linux, MODULE_SPI_LINUX)             \
   M(uart,    MODULE_UART)                    \
   M(rmt,     MODULE_RMT)                     \
+  M(pcnt,    MODULE_PCNT)                    \
   M(crypto,  MODULE_CRYPTO)                  \
   M(encoding,MODULE_ENCODING)                \
   M(font,    MODULE_FONT)                    \
@@ -129,6 +130,7 @@ namespace toit {
   PRIMITIVE(float_sign, 1)                   \
   PRIMITIVE(float_is_nan, 1)                 \
   PRIMITIVE(float_is_finite, 1)              \
+  PRIMITIVE(int_parse, 4)                    \
   PRIMITIVE(smi_less_than, 2)                \
   PRIMITIVE(smi_less_than_or_equal, 2)       \
   PRIMITIVE(smi_greater_than, 2)             \
@@ -157,6 +159,7 @@ namespace toit {
   PRIMITIVE(object_class_id, 1)              \
   PRIMITIVE(number_to_integer, 1)            \
   PRIMITIVE(float_sqrt, 1)                   \
+  PRIMITIVE(command, 0)                      \
   PRIMITIVE(args, 0)                         \
   PRIMITIVE(hatch, 2)                        \
   PRIMITIVE(hatch_method, 0)                 \
@@ -317,6 +320,7 @@ namespace toit {
   PRIMITIVE(get_gatt, 1)                     \
   PRIMITIVE(request_result, 1)               \
   PRIMITIVE(request_data, 1)                 \
+  PRIMITIVE(send_data, 3)                    \
   PRIMITIVE(request_service, 2)              \
   PRIMITIVE(request_characteristic, 3)       \
   PRIMITIVE(request_attribute, 2)            \
@@ -398,6 +402,17 @@ namespace toit {
   PRIMITIVE(receive, 3)                      \
   PRIMITIVE(stop_receive, 1)                 \
 
+#define MODULE_PCNT(PRIMITIVE)               \
+  PRIMITIVE(init, 0)                         \
+  PRIMITIVE(new_unit, 4)                     \
+  PRIMITIVE(close_unit, 1)                   \
+  PRIMITIVE(new_channel, 7)                  \
+  PRIMITIVE(close_channel, 2)                \
+  PRIMITIVE(start, 1)                        \
+  PRIMITIVE(stop, 1)                         \
+  PRIMITIVE(clear, 1)                        \
+  PRIMITIVE(get_count, 1)                    \
+
 #define MODULE_CRYPTO(PRIMITIVE)             \
   PRIMITIVE(sha1_start, 1)                   \
   PRIMITIVE(sha1_add, 4)                     \
@@ -452,6 +467,7 @@ namespace toit {
 #define MODULE_IMAGE(PRIMITIVE)              \
   PRIMITIVE(writer_create, 2)                \
   PRIMITIVE(writer_write, 4)                 \
+  PRIMITIVE(writer_write_all, 3)             \
   PRIMITIVE(writer_commit, 2)                \
   PRIMITIVE(writer_close, 1)                 \
 
@@ -610,7 +626,7 @@ namespace toit {
 
 #define __ARG__(N, name, type, test)    \
   Object* _raw_##name = __args[-(N)];   \
-  if (!_raw_##name->test()) WRONG_TYPE; \
+  if (!test(_raw_##name)) WRONG_TYPE; \
   type* name = type::cast(_raw_##name);
 
 #define _A_T_Array(N, name)         __ARG__(N, name, Array, is_array)
@@ -625,8 +641,8 @@ namespace toit {
 // Covers the range of int or Smi, whichever is smaller.
 #define _A_T_int(N, name)                               \
   Object* _raw_##name = __args[-(N)];                   \
-  if (!_raw_##name->is_smi()) {                         \
-    if (_raw_##name->is_large_integer()) OUT_OF_RANGE;  \
+  if (!is_smi(_raw_##name)) {                           \
+    if (is_large_integer(_raw_##name)) OUT_OF_RANGE;    \
     else WRONG_TYPE;                                    \
   }                                                     \
   word _word_##name = Smi::cast(_raw_##name)->value();  \
@@ -635,18 +651,28 @@ namespace toit {
 
 #define _A_T_uint8(N, name)                                           \
   Object* _raw_##name = __args[-(N)];                                 \
-  if (!_raw_##name->is_smi()) {                                       \
-    if (_raw_##name->is_large_integer()) OUT_OF_RANGE;                \
+  if (!is_smi(_raw_##name)) {                                         \
+    if (is_large_integer(_raw_##name)) OUT_OF_RANGE;                  \
     else WRONG_TYPE;                                                  \
   }                                                                   \
   word _value_##name = Smi::cast(_raw_##name)->value();               \
   if (0 > _value_##name || _value_##name > UINT8_MAX) OUT_OF_RANGE;   \
   uint8 name = (uint8) _value_##name;
 
+#define _A_T_int16(N, name)                                                  \
+  Object* _raw_##name = __args[-(N)];                                        \
+  if (!is_smi(_raw_##name)) {                                                \
+    if (is_large_integer(_raw_##name)) OUT_OF_RANGE;                         \
+    else WRONG_TYPE;                                                         \
+  }                                                                          \
+  word _value_##name = Smi::cast(_raw_##name)->value();                      \
+  if (INT16_MIN > _value_##name || _value_##name > INT16_MAX) OUT_OF_RANGE;  \
+  int16 name = (int16) _value_##name;
+
 #define _A_T_uint16(N, name)                                          \
   Object* _raw_##name = __args[-(N)];                                 \
-  if (!_raw_##name->is_smi()) {                                       \
-    if (_raw_##name->is_large_integer()) OUT_OF_RANGE;                \
+  if (!is_smi(_raw_##name)) {                                         \
+    if (is_large_integer(_raw_##name)) OUT_OF_RANGE;                  \
     else WRONG_TYPE;                                                  \
   }                                                                   \
   word _value_##name = Smi::cast(_raw_##name)->value();               \
@@ -656,9 +682,9 @@ namespace toit {
 #define _A_T_int32(N, name)                                                  \
   Object* _raw_##name = __args[-(N)];                                        \
   int64 _value_##name;                                                       \
-  if (_raw_##name->is_smi()) {                                               \
+  if (is_smi(_raw_##name)) {                                                 \
     _value_##name = Smi::cast(_raw_##name)->value();                         \
-  } else if (_raw_##name->is_large_integer()) {                              \
+  } else if (is_large_integer(_raw_##name))   {                              \
     _value_##name = LargeInteger::cast(_raw_##name)->value();                \
   } else {                                                                   \
     WRONG_TYPE;                                                              \
@@ -669,9 +695,9 @@ namespace toit {
 #define _A_T_uint32(N, name)                                                 \
   Object* _raw_##name = __args[-(N)];                                        \
   int64 _value_##name;                                                       \
-  if (_raw_##name->is_smi()) {                                               \
+  if (is_smi(_raw_##name)) {                                                 \
     _value_##name = Smi::cast(_raw_##name)->value();                         \
-  } else if (_raw_##name->is_large_integer()) {                              \
+  } else if (is_large_integer(_raw_##name)) {                                \
     _value_##name = LargeInteger::cast(_raw_##name)->value();                \
   } else {                                                                   \
     WRONG_TYPE;                                                              \
@@ -683,9 +709,9 @@ namespace toit {
 #define _A_T_int64(N, name)                             \
   Object* _raw_##name = __args[-(N)];                   \
   int64 name;                                           \
-  if (_raw_##name->is_smi()) {                          \
+  if (is_smi(_raw_##name)) {                            \
     name = (int64) Smi::cast(_raw_##name)->value();     \
-  } else if (_raw_##name->is_large_integer()) {         \
+  } else if (is_large_integer(_raw_##name)) {           \
     name = LargeInteger::cast(_raw_##name)->value();    \
   } else {                                              \
     WRONG_TYPE;                                         \
@@ -693,24 +719,24 @@ namespace toit {
 
 #define _A_T_word(N, name)                \
   Object* _raw_##name = __args[-(N)];     \
-  if (!_raw_##name->is_smi()) WRONG_TYPE; \
+  if (!is_smi(_raw_##name)) WRONG_TYPE;   \
   word name = Smi::cast(_raw_##name)->value();
 
 #define _A_T_double(N, name)                 \
   Object* _raw_##name = __args[-(N)];        \
-  if (!_raw_##name->is_double()) WRONG_TYPE; \
+  if (!is_double(_raw_##name)) WRONG_TYPE;   \
   double name = Double::cast(_raw_##name)->value();
 
 #define _A_T_to_double(N, name)                                \
   Object* _raw_##name = __args[-(N)];                          \
   double name;                                                 \
-  if (_raw_##name->is_smi()) {                                 \
+  if (is_smi(_raw_##name)) {                                   \
     name = (double) Smi::cast(_raw_##name)->value();           \
   }                                                            \
-  else if (_raw_##name->is_large_integer()) {                  \
+  else if (is_large_integer(_raw_##name)) {                    \
     name = (double) LargeInteger::cast(_raw_##name)->value();  \
   }                                                            \
-  else if (_raw_##name->is_double()) {                         \
+  else if (is_double(_raw_##name)) {                           \
     name = Double::cast(_raw_##name)->value();                 \
   } else WRONG_TYPE;
 
@@ -744,7 +770,7 @@ namespace toit {
   uword name##_length = 0;                                              \
   const uint8* name = 0;                                                \
   uint8* _freed_##name = 0;                                             \
-  if (_raw_##name->is_string()) {                                       \
+  if (is_string(_raw_##name)) {                                         \
     /* Avoid copying */                                                 \
     auto str = String::cast(_raw_##name);                               \
     name = unsigned_cast(str->as_cstr());                               \
@@ -796,9 +822,9 @@ namespace toit {
 #define _A_T_GPIOResourceGroup(N, name)   MAKE_UNPACKING_MACRO(GPIOResourceGroup, N, name)
 #define _A_T_I2CResourceGroup(N, name)    MAKE_UNPACKING_MACRO(I2CResourceGroup, N, name)
 #define _A_T_I2SResourceGroup(N, name)    MAKE_UNPACKING_MACRO(I2SResourceGroup, N, name)
-#define _A_T_PersistentResourceGroup(N, name)  MAKE_UNPACKING_MACRO(PersistentResourceGroup, N, name)
+#define _A_T_PersistentResourceGroup(N, name) MAKE_UNPACKING_MACRO(PersistentResourceGroup, N, name)
 #define _A_T_PipeResourceGroup(N, name)   MAKE_UNPACKING_MACRO(PipeResourceGroup, N, name)
-#define _A_T_SubprocessResourceGroup(N, name)  MAKE_UNPACKING_MACRO(SubprocessResourceGroup, N, name)
+#define _A_T_SubprocessResourceGroup(N, name) MAKE_UNPACKING_MACRO(SubprocessResourceGroup, N, name)
 #define _A_T_ResourceGroup(N, name)       MAKE_UNPACKING_MACRO(ResourceGroup, N, name)
 #define _A_T_SPIDevice(N, name)           MAKE_UNPACKING_MACRO(SPIDevice, N, name)
 #define _A_T_SPIResourceGroup(N, name)    MAKE_UNPACKING_MACRO(SPIResourceGroup, N, name)
@@ -810,12 +836,13 @@ namespace toit {
 #define _A_T_UDPResourceGroup(N, name)    MAKE_UNPACKING_MACRO(UDPResourceGroup, N, name)
 #define _A_T_UARTResourceGroup(N, name)   MAKE_UNPACKING_MACRO(UARTResourceGroup, N, name)
 #define _A_T_WifiResourceGroup(N, name)   MAKE_UNPACKING_MACRO(WifiResourceGroup, N, name)
-#define _A_T_EthernetResourceGroup(N, name)   MAKE_UNPACKING_MACRO(EthernetResourceGroup, N, name)
+#define _A_T_EthernetResourceGroup(N, name) MAKE_UNPACKING_MACRO(EthernetResourceGroup, N, name)
 #define _A_T_BLEResourceGroup(N, name)    MAKE_UNPACKING_MACRO(BLEResourceGroup, N, name)
 #define _A_T_X509ResourceGroup(N, name)   MAKE_UNPACKING_MACRO(X509ResourceGroup, N, name)
 #define _A_T_PWMResourceGroup(N, name)    MAKE_UNPACKING_MACRO(PWMResourceGroup, N, name)
 #define _A_T_RpcResourceGroup(N, name)    MAKE_UNPACKING_MACRO(RpcResourceGroup, N, name)
 #define _A_T_RMTResourceGroup(N, name)    MAKE_UNPACKING_MACRO(RMTResourceGroup, N, name)
+#define _A_T_PcntUnitResourceGroup(N, name) MAKE_UNPACKING_MACRO(PcntUnitResourceGroup, N, name)
 
 #define _A_T_Resource(N, name)            MAKE_UNPACKING_MACRO(Resource, N, name)
 #define _A_T_Directory(N, name)           MAKE_UNPACKING_MACRO(Directory, N, name)
@@ -844,6 +871,7 @@ namespace toit {
 #define _A_T_I2SResource(N, name)         MAKE_UNPACKING_MACRO(I2SResource, N, name)
 #define _A_T_AdcState(N, name)            MAKE_UNPACKING_MACRO(AdcState, N, name)
 #define _A_T_PWMResource(N, name)         MAKE_UNPACKING_MACRO(PWMResource, N, name)
+#define _A_T_PcntUnitResource(N, name)    MAKE_UNPACKING_MACRO(PcntUnitResource, N, name)
 #define _A_T_RMTResource(N, name)         MAKE_UNPACKING_MACRO(RMTResource, N, name)
 #define _A_T_GAPResource(N, name)         MAKE_UNPACKING_MACRO(GAPResource, N, name)
 #define _A_T_GATTResource(N, name)        MAKE_UNPACKING_MACRO(GATTResource, N, name)

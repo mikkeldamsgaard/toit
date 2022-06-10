@@ -408,10 +408,6 @@ int BLEResourceGroup::init_server() {
     }
 
     ble_hs_cfg.reset_cb = ble_on_reset;
-    // Start the host thread.
-//    if (!_server_config->spawn(NIMBLE_STACK_SIZE)) {
-//      _server_config->tear_down();
-//    };
   }
 
   return ESP_OK;
@@ -473,15 +469,18 @@ void BLEServerConfigGroup::set_subscription_status(uint16 attr_handle, uint16 co
   }
 }
 
-static bool object_to_mbuf(Process* process, Object* object, struct os_mbuf** res) {
-  *res = null;
+static Object* object_to_mbuf(Process* process, Object* object, os_mbuf** result) {
+  *result = null;
   if (object != process->program()->null_object()) {
     Blob bytes;
-    if (!object->byte_content(process->program(), &bytes, STRINGS_OR_BYTE_ARRAYS)) return false;
-    if (bytes.length() > 0)
-      *res = ble_hs_mbuf_from_flat(bytes.address(), bytes.length());
+    if (!object->byte_content(process->program(), &bytes, STRINGS_OR_BYTE_ARRAYS)) WRONG_TYPE;
+    if (bytes.length() > 0) {
+      os_mbuf* mbuf = ble_hs_mbuf_from_flat(bytes.address(), bytes.length());
+      if (!mbuf) MALLOC_FAILED;
+      *result = mbuf;
+    }
   }
-  return true;
+  return null;  // No error.
 }
 
 MODULE_IMPLEMENTATION(ble, MODULE_BLE)
@@ -491,7 +490,7 @@ PRIMITIVE(init) {
   if (proxy == null) ALLOCATION_FAILED;
 
   int id = ble_pool.any();
-  if (id == kInvalidBLE) OUT_OF_BOUNDS;
+  if (id == kInvalidBLE) ALREADY_IN_USE;
 
   esp_err_t err = esp_nimble_hci_and_controller_init();
 
@@ -533,6 +532,7 @@ PRIMITIVE(init) {
 
   ble_hs_cfg.sync_cb = ble_on_sync;
 
+  // NimBLE needs to be initialized before the server setup is executed.
   nimble_port_init();
 
   if (__args[0] != process->program()->null_object()) {
@@ -541,6 +541,7 @@ PRIMITIVE(init) {
     int ret = group->init_server();
     if (ret != ESP_OK) {
       group->tear_down();
+      delete gap;  // Resource isn't registered in group yet.
       return Primitive::os_error(ret, process);
     }
   }
@@ -862,7 +863,7 @@ PRIMITIVE(request_data) {
     INVALID_ARGUMENT;
   }
 
-  const struct os_mbuf* mbuf = gatt->mbuf();
+  const os_mbuf* mbuf = gatt->mbuf();
   if (!mbuf) return process->program()->null_object();
   Object* ret_val = convert_mbuf_to_heap_object(process, mbuf);
 
@@ -872,6 +873,21 @@ PRIMITIVE(request_data) {
   } else {
     ALLOCATION_FAILED;
   }
+}
+
+PRIMITIVE(send_data) {
+  ARGS(GATTResource, gatt, uint16, handle, Object, value);
+
+  os_mbuf* om = null;
+  Object* error = object_to_mbuf(process, value, &om);
+  if (error) return error;
+
+  int err = ble_gattc_write(gatt->handle(), handle, om, NULL, NULL);
+  if (err != ESP_OK) {
+    return Primitive::os_error(err, process);
+  }
+
+  return process->program()->null_object();
 }
 
 PRIMITIVE(request_service) {
@@ -971,7 +987,8 @@ PRIMITIVE(add_server_characteristic) {
   ble_uuid_any_t uuid = uuid_from_blob(uuid_blob);
 
   os_mbuf* om = null;
-  if (!object_to_mbuf(process, value, &om)) WRONG_TYPE;
+  Object* error = object_to_mbuf(process, value, &om);
+  if (error) return error;
 
   Mutex* resource_group_mutex = static_cast<BLEServerConfigGroup*>(service->resource_group())->mutex();
 
@@ -990,8 +1007,9 @@ PRIMITIVE(add_server_characteristic) {
 PRIMITIVE(set_characteristics_value) {
   ARGS(BLEServerCharacteristicResource, resource, Object, value);
 
-  struct os_mbuf* om;
-  if (!object_to_mbuf(process, value, &om)) WRONG_TYPE;
+  os_mbuf* om = null;
+  Object* error = object_to_mbuf(process, value, &om);
+  if (error) return error;
 
   resource->set_mbuf_to_send(om);
 
@@ -1002,25 +1020,22 @@ PRIMITIVE(notify_characteristics_value) {
   ARGS(BLEServerCharacteristicResource, resource, Object, value);
 
   if (resource->is_notify_enabled() || resource->is_indicate_enabled()) {
-    struct os_mbuf* om;
-    int err_step = 0;
+    os_mbuf* om = null;
+    Object* error = object_to_mbuf(process, value, &om);
+    if (error) return error;
+
     int err = ESP_OK;
     if (resource->is_notify_enabled()) {
-      if (!object_to_mbuf(process, value, &om)) WRONG_TYPE;
       err = ble_gattc_notify_custom(resource->conn_handle(), resource->nimble_value_handle(), om);
-      err_step = 1;
     }
 
     if (err == ESP_OK && resource->is_indicate_enabled()) {
-      if (!object_to_mbuf(process, value, &om)) WRONG_TYPE;
       err = ble_gattc_indicate_custom(resource->conn_handle(), resource->nimble_value_handle(), om);
-      err_step = 2;
     }
 
     if (err != ESP_OK) {
       Error* error = null;
       char err_str[15];
-      sprintf(err_str,"BLE:%d.%d.%d.%d",err,err_step, resource->is_notify_enabled(), resource->is_indicate_enabled());
       String* result = process->allocate_string(err_str, &error);
       if (result == null) return error;
       return Error::from(result);
