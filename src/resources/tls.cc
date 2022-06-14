@@ -15,7 +15,7 @@
 
 #include "../top.h"
 
-#if !defined(TOIT_FREERTOS) || defined(CONFIG_TOIT_ENABLE_IP)
+#if !defined(TOIT_FREERTOS) || defined(CONFIG_TOIT_CRYPTO)
 #include <mbedtls/error.h>
 #include <mbedtls/pem.h>
 #include <mbedtls/platform.h>
@@ -29,6 +29,7 @@
 
 #include "tls.h"
 #include "x509.h"
+
 namespace toit {
 
 void MbedTLSResourceGroup::uninit() {

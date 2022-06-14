@@ -154,10 +154,12 @@ static const int UINT32_SIZE = sizeof(uint32);
 static const int INT64_SIZE = sizeof(int64);
 
 static const int TOIT_PAGE_SIZE_LOG2_64 = 15;  // Page size 32kB.
-//static const int TOIT_PAGE_SIZE_LOG2_32 = 12;  // Page size 4kB.
-static const int TOIT_PAGE_SIZE_LOG2_32 = 14;  // Page size 16kB. (SPIRAM)
+static const int TOIT_PAGE_SIZE_LOG2_32 = 12;  // Page size 4kB.
+static const int TOIT_PAGE_SIZE_LOG2_32_SPIRAM = 14;  // Page size 16kB. (SPIRAM)
 #ifdef BUILD_64
 static const int TOIT_PAGE_SIZE_LOG2 = TOIT_PAGE_SIZE_LOG2_64;
+#elif CONFIG_TOIT_USE_SPIRAM
+static const int TOIT_PAGE_SIZE_LOG2 = TOIT_PAGE_SIZE_LOG2_32_SPIRAM;
 #else
 static const int TOIT_PAGE_SIZE_LOG2 = TOIT_PAGE_SIZE_LOG2_32;
 #endif

@@ -52,8 +52,11 @@ namespace toit {
 
 // Flags used to get memory for the Toit heap, which needs to be fast and 8-bit
 // capable.
-//static const int TOIT_HEAP_CAPS_FLAGS = MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+#ifdef CONFIG_TOIT_USE_SPIRAM
 static const int TOIT_HEAP_CAPS_FLAGS = MALLOC_CAP_SPIRAM;
+#else
+static const int TOIT_HEAP_CAPS_FLAGS = MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+#endif
 
 void panic_put_char(char c) {
   while (((READ_PERI_REG(UART_STATUS_REG(CONFIG_ESP_CONSOLE_UART_NUM)) >> UART_TXFIFO_CNT_S)&UART_TXFIFO_CNT) >= 126) ;
