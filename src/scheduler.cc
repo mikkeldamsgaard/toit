@@ -692,7 +692,7 @@ void Scheduler::start_thread(Locker& locker, StartThreadRule force) {
   if (new_thread == null) FATAL("OS thread spawn failed");
   int core = _num_threads++;
   _threads.prepend(new_thread);
-  if (!new_thread->spawn(4 * KB, core)) FATAL("OS thread spawn failed");
+  if (!new_thread->spawn(6 * KB, core)) FATAL("OS thread spawn failed");
 }
 
 void Scheduler::process_ready(Process* process) {

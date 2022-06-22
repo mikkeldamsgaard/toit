@@ -151,7 +151,7 @@ class EncodeVisitor : public Visitor {
 };
 
 #ifdef IOT_DEVICE
-#define MAX_NUMBER_OF_STACK_FRAMES  40  // About 629 bytes of stack trace, max.
+#define MAX_NUMBER_OF_STACK_FRAMES  100  // About 629 bytes of stack trace, max.
 #else
 #define MAX_NUMBER_OF_STACK_FRAMES 100
 #endif

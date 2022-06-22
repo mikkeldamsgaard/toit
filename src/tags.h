@@ -57,6 +57,7 @@ namespace toit {
   fn(I2CResourceGroup)                  \
   fn(I2SResourceGroup)                  \
   fn(SPIResourceGroup)                  \
+  fn(SPIFlashResourceGroup)             \
   fn(SignalResourceGroup)               \
   fn(SocketResourceGroup)               \
   fn(TCPResourceGroup)                  \

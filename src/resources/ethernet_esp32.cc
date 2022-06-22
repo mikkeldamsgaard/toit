@@ -36,7 +36,11 @@ enum {
   ETHERNET_CONNECTED    = 1 << 0,
   ETHERNET_DHCP_SUCCESS = 1 << 1,
   ETHERNET_DISCONNECTED = 1 << 2,
+  ETHERNET_DHCP_LOST    = 1 << 3
 };
+
+#define ETHERNET_MASK (ETHERNET_CONNECTED | ETHERNET_DISCONNECTED)
+#define DHCP_MASK (ETHERNET_DHCP_LOST | ETHERNET_DHCP_SUCCESS)
 
 enum {
   MAC_CHIP_W5500    = 1,
@@ -107,7 +111,7 @@ class IPEvents : public SystemResource {
  public:
   TAG(IPEvents);
   explicit IPEvents(EthernetResourceGroup* group)
-      : SystemResource(group, IP_EVENT, IP_EVENT_ETH_GOT_IP)
+      : SystemResource(group, IP_EVENT)
       , _ip((char*)calloc(1, 16)) {}
 
   ~IPEvents() {
@@ -119,11 +123,14 @@ class IPEvents : public SystemResource {
   }
 
   void update_ip(uint32 addr) {
-    sprintf(_ip, "%d.%d.%d.%d",
-            (addr >> 0) & 0xff,
-            (addr >> 8) & 0xff,
-            (addr >> 16) & 0xff,
-            (addr >> 24) & 0xff);
+    if (addr != 0)
+      sprintf(_ip, "%d.%d.%d.%d",
+              (addr >> 0) & 0xff,
+              (addr >> 8) & 0xff,
+              (addr >> 16) & 0xff,
+              (addr >> 24) & 0xff);
+    else
+      *_ip = 0;
   }
 
  private:
@@ -137,11 +144,13 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
   if (system_event->base == ETH_EVENT) {
     switch (system_event->id) {
       case ETHERNET_EVENT_CONNECTED:
+        state &= ~ETHERNET_MASK;
         state |= ETHERNET_CONNECTED;
         break;
 
       case ETHERNET_EVENT_DISCONNECTED:
-        //state &= ~ETHERNET_CONNECTED;
+        state &= ~ETHERNET_MASK;
+        state |= ETHERNET_DISCONNECTED;
         break;
 
       case ETHERNET_EVENT_START:
@@ -158,10 +167,16 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
       case IP_EVENT_ETH_GOT_IP: {
         ip_event_got_ip_t* event = reinterpret_cast<ip_event_got_ip_t*>(system_event->event_data);
         static_cast<IPEvents*>(resource)->update_ip(event->ip_info.ip.addr);
+        state &= ~DHCP_MASK;
         state |= ETHERNET_DHCP_SUCCESS;
         break;
       }
-
+      case IP_EVENT_ETH_LOST_IP: {
+        static_cast<IPEvents*>(resource)->update_ip(0);
+        state &= ~DHCP_MASK;
+        state |= ETHERNET_DHCP_LOST;
+        break;
+      }
       default:
         ets_printf("unhandled Ethernet event: %d\n", system_event->id);
     }
