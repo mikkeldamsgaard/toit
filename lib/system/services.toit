@@ -154,6 +154,11 @@ abstract class ServiceDefinition:
   resource client/int handle/int -> ServiceResource:
     return _find_resource_ client handle
 
+  resources_do [block] -> none:
+    _resources_.do: | client/int resources/Map |
+      resources.do: | handle/int resource/ServiceResource |
+        block.call resource client
+
   wait -> none:
     _uninstalled_.get
 
@@ -171,7 +176,9 @@ abstract class ServiceDefinition:
       resources.values.do: | resource/ServiceResource |
         catch --trace: resource.close
     catch --trace: on_closed client
-    if _clients_.is_empty: _uninstall_
+    if _clients_.is_empty:
+      print_ "Clients are empty, uninstalling $_uuids_"
+      _uninstall_
 
   _register_resource_ client/int resource/ServiceResource notifiable/bool -> int:
     handle ::= _new_resource_handle_ notifiable
@@ -207,6 +214,8 @@ abstract class ServiceDefinition:
       throw "$this does not provide service:$uuid@$(major).$(minor).x"
 
   _uninstall_ -> none:
+    if _uuids_.contains "76f41607-2a8f-41f4-b307-8577f17290b2": return
+
     if not _resources_.is_empty: throw "Leaked $_resources_"
     _uuids_.do: _manager_.unlisten it
     _manager_ = null
@@ -252,6 +261,9 @@ abstract class ServiceResourceProxy:
     add_finalizer this:: close
     if _handle_ & 1 == 1:
       ServiceResourceProxyManager_.instance.register client_.id _handle_ this
+
+  is_closed -> bool:
+    return _handle_ == null
 
   handle_ -> int:
     return _handle_
@@ -339,6 +351,7 @@ class ServiceManager_ implements SystemMessageHandler_:
     _client_.listen uuid
 
   unlisten uuid/string -> none:
+    if uuid == "76f41607-2a8f-41f4-b307-8577f17290b2": return
     _client_.unlisten uuid
     services_by_uuid_.remove uuid
 

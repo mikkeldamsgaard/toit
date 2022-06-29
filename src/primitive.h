@@ -142,7 +142,7 @@ namespace toit {
   PRIMITIVE(float_greater_than, 2)           \
   PRIMITIVE(float_greater_than_or_equal, 2)  \
   PRIMITIVE(string_hash_code, 1)             \
-  PRIMITIVE(string_slice_hash_code, 1)       \
+  PRIMITIVE(blob_hash_code, 1)               \
   PRIMITIVE(hash_simple_json_string, 2)      \
   PRIMITIVE(compare_simple_json_string, 3)   \
   PRIMITIVE(size_of_json_number, 2)          \
@@ -340,6 +340,9 @@ namespace toit {
   PRIMITIVE(ota_begin, 2)                    \
   PRIMITIVE(ota_write, 1)                    \
   PRIMITIVE(ota_end, 2)                      \
+  PRIMITIVE(ota_state, 0)                    \
+  PRIMITIVE(ota_validate, 0)                 \
+  PRIMITIVE(ota_rollback, 0)                 \
   PRIMITIVE(reset_reason, 0)                 \
   PRIMITIVE(enable_external_wakeup, 2)       \
   PRIMITIVE(wakeup_cause, 0)                 \
@@ -466,10 +469,10 @@ namespace toit {
   PRIMITIVE(deserialize, 1)                  \
 
 #define MODULE_IMAGE(PRIMITIVE)              \
+  PRIMITIVE(current_id, 0)                   \
   PRIMITIVE(writer_create, 2)                \
   PRIMITIVE(writer_write, 4)                 \
-  PRIMITIVE(writer_write_all, 3)             \
-  PRIMITIVE(writer_commit, 2)                \
+  PRIMITIVE(writer_commit, 1)                \
   PRIMITIVE(writer_close, 1)                 \
 
 #define MODULE_BLOB(PRIMITIVE)               \
@@ -491,7 +494,7 @@ namespace toit {
   PRIMITIVE(config_interrupt, 2)             \
 
 #define MODULE_ADC(PRIMITIVE)               \
-  PRIMITIVE(init, 3)                        \
+  PRIMITIVE(init, 4)                        \
   PRIMITIVE(get, 2)                         \
   PRIMITIVE(close, 1)                       \
 
@@ -510,6 +513,7 @@ namespace toit {
   PRIMITIVE(spawn, 3)                        \
   PRIMITIVE(is_running, 2)                   \
   PRIMITIVE(kill, 2)                         \
+  PRIMITIVE(bundled_images, 0)               \
 
 #define MODULE_FLASH_REGISTRY(PRIMITIVE)     \
   PRIMITIVE(next, 1)                         \
@@ -524,8 +528,9 @@ namespace toit {
   PRIMITIVE(erase_flash_registry, 0)         \
 
 #define MODULE_SPI_FLASH(PRIMITIVE)          \
-  PRIMITIVE(init_sdcard, 3)                  \
-  PRIMITIVE(init_flash, 4)                   \
+  PRIMITIVE(init_sdcard, 6)                  \
+  PRIMITIVE(init_nor_flash, 6)               \
+  PRIMITIVE(init_nand_flash, 6)              \
   PRIMITIVE(close, 1)                        \
 
 #define MODULE_FILE(PRIMITIVE)               \

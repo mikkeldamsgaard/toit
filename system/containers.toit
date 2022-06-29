@@ -119,8 +119,6 @@ abstract class ContainerServiceDefinition extends ServiceDefinition
   handle pid/int client/int index/int arguments/any -> any:
     if index == ContainerService.LIST_IMAGES_INDEX:
       return list_images
-    if index == ContainerService.CURRENT_IMAGE_INDEX:
-      return current_image pid
     if index == ContainerService.START_IMAGE_INDEX:
       return start_image (uuid.Uuid arguments)
     if index == ContainerService.UNINSTALL_IMAGE_INDEX:
@@ -139,18 +137,10 @@ abstract class ContainerServiceDefinition extends ServiceDefinition
   abstract images -> List
   abstract add_flash_image allocation/FlashAllocation -> ContainerImage
   abstract lookup_image id/uuid.Uuid -> ContainerImage?
-  abstract lookup_image_from_pid pid/int -> ContainerImage?
 
   list_images -> List:
     return images.map --in_place: | image/ContainerImage |
       image.id.to_byte_array
-
-  current_image -> ByteArray:
-    unreachable  // <-- TODO(kasper): Nasty.
-
-  current_image pid/int -> ByteArray:
-    image/ContainerImage := lookup_image_from_pid pid
-    return image.id.to_byte_array
 
   start_image id/uuid.Uuid -> int?:
     image/ContainerImage? := lookup_image id
@@ -194,39 +184,25 @@ class ContainerManager extends ContainerServiceDefinition implements SystemMessa
     set_system_message_handler_ SYSTEM_SPAWNED_ this
     set_system_message_handler_ SYSTEM_MIRROR_MESSAGE_ this
 
-    unrelocated/List? := null
     image_registry.do: | allocation/FlashAllocation |
-      if allocation.type == FLASH_ALLOCATION_PROGRAM_TYPE:
-        add_flash_image allocation
-      else if allocation.type == FLASH_ALLOCATION_PROGRAM_UNRELOCATED_TYPE:
-        if unrelocated: unrelocated.add allocation
-        else: unrelocated = [allocation]
+      if allocation.type != FLASH_ALLOCATION_PROGRAM_TYPE: continue.do
+      add_flash_image allocation
 
-    // Run through the unrelocated programs and relocate them unless we
-    // already did that successfully before in which case they will have
-    // shown up as relocated programs (added to the images map).
-    if unrelocated:
-      unrelocated.do: | allocation/FlashAllocation |
-        if not images_.contains allocation.id:
-          add_flash_image (relocate allocation image_registry)
-        // We always free the unrelocated programs by erasing them from flash
-        // if the relocation attempt is successful (doesn't throw). Maybe it
-        // would make sense to make sure that a rescan finds the relocated
-        // image before doing this?
-        image_registry.free allocation
+    // Run through the bundled images in the VM, but skip the
+    // first one which is always the system image.
+    bundled := container_bundled_images_
+    for i := 2; i < bundled.size; i += 2:
+      allocation := FlashAllocation bundled[i]
+      if not images_.contains allocation.id: add_flash_image allocation
+
+  system_image -> ContainerImage:
+    return system_image_
 
   images -> List:
-    return images_.values
+    return images_.values.filter: it != system_image_
 
   lookup_image id/uuid.Uuid -> ContainerImage?:
     return images_.get id
-
-  lookup_image_from_pid pid/int -> ContainerImage?:
-    // TODO(kasper): This is rather inefficient implementation because
-    // the running containers are indexed by gid, not pid.
-    containers_by_id_.do: | gid/int container/Container |
-      if container.is_process_running pid: return container.image
-    return null
 
   register_image image/ContainerImage -> none:
     images_[image.id] = image
@@ -297,7 +273,7 @@ print_for_manually_decoding_ message/ByteArray --from=0 --to=message.size:
   // Print a message on output so that that you can easily decode.
   // The message is base64 encoded to limit the output size.
   print_ "----"
-  print_ "Received a Toit system message. Executing the command below will"
+  print_ "Received a Toit stack trace. Executing the command below will"
   print_ "make it human readable:"
   print_ "----"
   // Block size must be a multiple of 3 for this to work, due to the 3/4 nature
@@ -305,7 +281,7 @@ print_for_manually_decoding_ message/ByteArray --from=0 --to=message.size:
   BLOCK_SIZE := 1500
   for i := from; i < to; i += BLOCK_SIZE:
     end := i >= to - BLOCK_SIZE
-    prefix := i == from ? "build/host/sdk/bin/toit.run tools/system_message.toit \"\$SNAPSHOT\" -b " : ""
+    prefix := i == from ? "jag decode " : ""
     base64_text := base64.encode message[i..(end ? to : i + BLOCK_SIZE)]
     postfix := end ? "" : "\\"
     print_ "$prefix$base64_text$postfix"
@@ -344,3 +320,6 @@ container_next_gid_ -> int:
 
 container_kill_pid_ pid/int -> bool:
   #primitive.core.signal_kill
+
+container_bundled_images_ -> Array_:
+  #primitive.programs_registry.bundled_images

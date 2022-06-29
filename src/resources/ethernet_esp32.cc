@@ -140,7 +140,8 @@ class IPEvents : public SystemResource {
 
 uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t state) {
   SystemEvent* system_event = reinterpret_cast<SystemEvent*>(data);
-  printf("event: system_event->base=%s, system_event->id=%d\n", system_event->base, system_event->id);
+  printf("event: system_event->base=%s, system_event->id=%d, state=0x%02x\n", system_event->base, system_event->id,state);
+
   if (system_event->base == ETH_EVENT) {
     switch (system_event->id) {
       case ETHERNET_EVENT_CONNECTED:
@@ -183,7 +184,7 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
   } else {
     FATAL("unhandled event: %d\n", system_event->base);
   }
-
+  ets_printf("new state: 0x%02x\n", state);
   return state;
 }
 

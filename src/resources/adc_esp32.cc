@@ -35,9 +35,94 @@
 
 namespace toit {
 
+#ifdef CONFIG_IDF_TARGET_ESP32
+
 static int get_adc1_channel(int pin) {
   switch (pin) {
-#ifdef CONFIG_IDF_TARGET_ESP32S3
+    case 36: return ADC1_CHANNEL_0;
+    case 37: return ADC1_CHANNEL_1;
+    case 38: return ADC1_CHANNEL_2;
+    case 39: return ADC1_CHANNEL_3;
+    case 32: return ADC1_CHANNEL_4;
+    case 33: return ADC1_CHANNEL_5;
+    case 34: return ADC1_CHANNEL_6;
+    case 35: return ADC1_CHANNEL_7;
+    default: return adc1_channel_t(-1);
+  }
+}
+
+static int get_adc2_channel(int pin) {
+  switch (pin) {
+    case 4: return ADC2_CHANNEL_0;
+    case 0: return ADC2_CHANNEL_1;
+    case 2: return ADC2_CHANNEL_2;
+    case 15: return ADC2_CHANNEL_3;
+    case 13: return ADC2_CHANNEL_4;
+    case 12: return ADC2_CHANNEL_5;
+    case 14: return ADC2_CHANNEL_6;
+    case 27: return ADC2_CHANNEL_7;
+    case 25: return ADC2_CHANNEL_8;
+    case 26: return ADC2_CHANNEL_9;
+    default: return adc2_channel_t(-1);
+  }
+}
+
+#elif CONFIG_IDF_TARGET_ESP32S2
+
+static int get_adc1_channel(int pin) {
+  switch (pin) {
+    case 1: return ADC1_CHANNEL_0;
+    case 2: return ADC1_CHANNEL_1;
+    case 3: return ADC1_CHANNEL_2;
+    case 4: return ADC1_CHANNEL_3;
+    case 5: return ADC1_CHANNEL_4;
+    case 6: return ADC1_CHANNEL_5;
+    case 7: return ADC1_CHANNEL_6;
+    case 8: return ADC1_CHANNEL_7;
+    case 9: return ADC1_CHANNEL_8;
+    case 10: return ADC1_CHANNEL_9;
+    default: return adc1_channel_t(-1);
+  }
+}
+
+static int get_adc2_channel(int pin) {
+  switch (pin) {
+    case 11: return ADC2_CHANNEL_0;
+    case 12: return ADC2_CHANNEL_1;
+    case 13: return ADC2_CHANNEL_2;
+    case 14: return ADC2_CHANNEL_3;
+    case 15: return ADC2_CHANNEL_4;
+    case 16: return ADC2_CHANNEL_5;
+    case 17: return ADC2_CHANNEL_6;
+    case 18: return ADC2_CHANNEL_7;
+    case 19: return ADC2_CHANNEL_8;
+    case 20: return ADC2_CHANNEL_9;
+    default: return adc2_channel_t(-1);
+  }
+}
+
+#elif CONFIG_IDF_TARGET_ESP32C3
+
+static int get_adc1_channel(int pin) {
+  switch (pin) {
+    case 0: return ADC1_CHANNEL_0;
+    case 1: return ADC1_CHANNEL_1;
+    case 2: return ADC1_CHANNEL_2;
+    case 3: return ADC1_CHANNEL_3;
+    case 4: return ADC1_CHANNEL_4;
+    default: return adc1_channel_t(-1);
+  }
+}
+
+static int get_adc2_channel(int pin) {
+  switch (pin) {
+    case 5: return ADC2_CHANNEL_0;
+    default: return adc2_channel_t(-1);
+  }
+}
+#elif CONFIG_IDF_TARGET_ESP32S3
+static int get_adc1_channel(int pin) {
+  switch (pin) {
     case 1: return  ADC1_CHANNEL_0;
     case 2: return  ADC1_CHANNEL_1;
     case 3: return  ADC1_CHANNEL_2;
@@ -48,25 +133,12 @@ static int get_adc1_channel(int pin) {
     case 8: return  ADC1_CHANNEL_7;
     case 9: return  ADC1_CHANNEL_8;
     case 10: return  ADC1_CHANNEL_9;
-#else
-    case 36: return ADC1_CHANNEL_0;
-    case 37: return ADC1_CHANNEL_1;
-    case 38: return ADC1_CHANNEL_2;
-    case 39: return ADC1_CHANNEL_3;
-    case 32: return ADC1_CHANNEL_4;
-#ifndef CONFIG_IDF_TARGET_ESP32C3
-    case 33: return ADC1_CHANNEL_5;
-    case 34: return ADC1_CHANNEL_6;
-    case 35: return ADC1_CHANNEL_7;
-#endif
-#endif
     default: return adc1_channel_t(-1);
   }
 }
 
 static int get_adc2_channel(int pin) {
   switch (pin) {
-#ifdef CONFIG_IDF_TARGET_ESP32S3
     case 11: return  ADC2_CHANNEL_0;
     case 12: return  ADC2_CHANNEL_1;
     case 13: return  ADC2_CHANNEL_2;
@@ -77,12 +149,24 @@ static int get_adc2_channel(int pin) {
     case 18: return  ADC2_CHANNEL_7;
     case 19: return  ADC2_CHANNEL_8;
     case 20: return  ADC2_CHANNEL_9;
-#else
-    case 4: return ADC2_CHANNEL_0;
-#endif
     default: return adc2_channel_t(-1);
   }
 }
+
+#elif CONFIG_IDF_TARGET_ESP32
+
+#error "Unsupported ESP32 target"
+
+#else
+
+static int get_adc1_channel(int pin) {
+  return adc1_channel_t(-1);
+}
+static int get_adc2_channel(int pin) {
+  return adc2_channel_t(-1);
+}
+
+#endif
 
 static adc_atten_t get_atten(int mv) {
   if (mv <= 1100) return ADC_ATTEN_DB_0;
@@ -94,7 +178,7 @@ static adc_atten_t get_atten(int mv) {
 MODULE_IMPLEMENTATION(adc, MODULE_ADC)
 
 PRIMITIVE(init) {
-  ARGS(SimpleResourceGroup, group, int, pin, double, max);
+  ARGS(SimpleResourceGroup, group, int, pin, bool, allow_restricted, double, max);
 
   if (max < 0.0) INVALID_ARGUMENT;
 
@@ -111,7 +195,7 @@ PRIMITIVE(init) {
 
     err = adc1_config_channel_atten((adc1_channel_t)chan, atten);
     if (err != ESP_OK) return Primitive::os_error(err, process);
-  } else {
+  } else if (allow_restricted) {
     chan = get_adc2_channel(pin);
     if (chan >= 0) {
       unit = ADC_UNIT_2;
@@ -120,6 +204,8 @@ PRIMITIVE(init) {
     } else {
       OUT_OF_RANGE;
     }
+  } else {
+    OUT_OF_RANGE;
   }
   
   ByteArray* proxy = process->object_heap()->allocate_proxy();
@@ -143,6 +229,8 @@ PRIMITIVE(init) {
 
 PRIMITIVE(get) {
   ARGS(AdcState, state, int, samples);
+
+  if (samples < 1 || samples > 64) OUT_OF_RANGE;
 
   uint32_t adc_reading = 0;
 

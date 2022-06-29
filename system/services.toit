@@ -49,6 +49,9 @@ class SystemServiceManager extends ServiceDefinition implements ServiceDiscovery
     uuids.add uuid
 
   unlisten uuid/string -> none:
+    if uuid == "76f41607-2a8f-41f4-b307-8577f17290b2": return
+
+
     pid := services_by_uuid_.get uuid
     if not pid: return
     services_by_uuid_.remove uuid
