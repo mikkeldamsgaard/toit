@@ -107,15 +107,12 @@ class EthernetEvents : public SystemResource {
   friend class EthernetResourceGroup;
 };
 
-class IPEvents : public SystemResource {
+class EthernetIpEvents : public SystemResource {
  public:
-  TAG(IPEvents);
-  explicit IPEvents(EthernetResourceGroup* group)
-      : SystemResource(group, IP_EVENT)
-      , _ip((char*)calloc(1, 16)) {}
-
-  ~IPEvents() {
-    free(_ip);
+  TAG(EthernetIpEvents);
+  explicit EthernetIpEvents(EthernetResourceGroup* group)
+      : SystemResource(group, IP_EVENT, IP_EVENT_ETH_GOT_IP) {
+    clear_ip();
   }
 
   const char* ip() {
@@ -133,9 +130,13 @@ class IPEvents : public SystemResource {
       *_ip = 0;
   }
 
+  void clear_ip() {
+    memset(_ip, 0, sizeof(_ip));
+  }
+
  private:
   friend class EthernetResourceGroup;
-  char* _ip;
+  char _ip[16];
 };
 
 uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t state) {
@@ -145,12 +146,10 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
   if (system_event->base == ETH_EVENT) {
     switch (system_event->id) {
       case ETHERNET_EVENT_CONNECTED:
-        state &= ~ETHERNET_MASK;
         state |= ETHERNET_CONNECTED;
         break;
 
       case ETHERNET_EVENT_DISCONNECTED:
-        state &= ~ETHERNET_MASK;
         state |= ETHERNET_DISCONNECTED;
         break;
 
@@ -167,14 +166,12 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
     switch (system_event->id) {
       case IP_EVENT_ETH_GOT_IP: {
         ip_event_got_ip_t* event = reinterpret_cast<ip_event_got_ip_t*>(system_event->event_data);
-        static_cast<IPEvents*>(resource)->update_ip(event->ip_info.ip.addr);
-        state &= ~DHCP_MASK;
+        static_cast<EthernetIpEvents*>(resource)->update_ip(event->ip_info.ip.addr);
         state |= ETHERNET_DHCP_SUCCESS;
         break;
       }
       case IP_EVENT_ETH_LOST_IP: {
         static_cast<IPEvents*>(resource)->update_ip(0);
-        state &= ~DHCP_MASK;
         state |= ETHERNET_DHCP_LOST;
         break;
       }
@@ -221,7 +218,7 @@ PRIMITIVE(init_esp32) {
 
   // TODO(anders): If phy initialization fails, we're leaking this.
   esp_eth_mac_t* mac = esp_eth_mac_new_esp32(&mac_config);
-  
+
   if (!mac) {
     ethernet_pool.put(id);
     esp_netif_destroy(netif);
@@ -388,7 +385,7 @@ PRIMITIVE(setup_ip) {
   ByteArray* proxy = process->object_heap()->allocate_proxy();
   if (proxy == null) ALLOCATION_FAILED;
 
-  IPEvents* ip_events = _new IPEvents(group);
+  EthernetIpEvents* ip_events = _new EthernetIpEvents(group);
   if (ip_events == null) MALLOC_FAILED;
 
   group->register_resource(ip_events);
@@ -407,7 +404,7 @@ PRIMITIVE(disconnect) {
 }
 
 PRIMITIVE(get_ip) {
-  ARGS(IPEvents, ip);
+  ARGS(EthernetIpEvents, ip);
   return process->allocate_string_or_error(ip->ip());
 }
 

@@ -264,12 +264,10 @@ bool ProgramOrientedEncoder::encode_error(Object* type, const char* message, Sta
   return !buffer()->has_overflow();
 }
 
-#ifdef PROFILER
 bool ProgramOrientedEncoder::encode_profile(Profiler* profiler, String* title, int cutoff) {
   profiler->encode_on(this, title, cutoff);
   return !buffer()->has_overflow();
 }
-#endif
 
 void Encoder::write_byte(uint8 c) {
   _buffer->put_byte(c);
@@ -278,7 +276,7 @@ void Encoder::write_byte(uint8 c) {
 void Encoder::write_header(int size, uint8 tag) {
   write_byte('[');
   write_byte('#');
-  write_int(size + 1);
+  write_int32(size + 1);
   write_int(tag); // The tag is always the first element.
 }
 
@@ -307,6 +305,12 @@ void Encoder::write_int(int64 i) {
     _buffer->put_byte('L');
     _buffer->put_int64(i);
   }
+}
+
+void Encoder::write_int32(int64 i) {
+  ASSERT(i >= MY_INT32_MIN && i <= MY_INT32_MAX);
+  _buffer->put_byte('l');
+  _buffer->put_int32(i);
 }
 
 void Encoder::write_double(double value) {
