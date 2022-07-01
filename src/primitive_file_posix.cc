@@ -474,6 +474,7 @@ PRIMITIVE(chdir) {
 PRIMITIVE(mkdir) {
   ARGS(cstring, pathname, int, mode);
   int result = FILE_MKDIR_(current_dir(process), pathname, mode);
+  printf("mkdir %s result: %d %d\n", pathname, result, errno);
   return result < 0
     ? return_open_error(process, errno)
     : process->program()->null_object();
