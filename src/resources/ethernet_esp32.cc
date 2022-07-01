@@ -39,9 +39,6 @@ enum {
   ETHERNET_DHCP_LOST    = 1 << 3
 };
 
-#define ETHERNET_MASK (ETHERNET_CONNECTED | ETHERNET_DISCONNECTED)
-#define DHCP_MASK (ETHERNET_DHCP_LOST | ETHERNET_DHCP_SUCCESS)
-
 enum {
   MAC_CHIP_W5500    = 1,
 };
@@ -120,14 +117,11 @@ class EthernetIpEvents : public SystemResource {
   }
 
   void update_ip(uint32 addr) {
-    if (addr != 0)
-      sprintf(_ip, "%d.%d.%d.%d",
-              (addr >> 0) & 0xff,
-              (addr >> 8) & 0xff,
-              (addr >> 16) & 0xff,
-              (addr >> 24) & 0xff);
-    else
-      *_ip = 0;
+    sprintf(_ip, "%d.%d.%d.%d",
+            (addr >> 0) & 0xff,
+            (addr >> 8) & 0xff,
+            (addr >> 16) & 0xff,
+            (addr >> 24) & 0xff);
   }
 
   void clear_ip() {
@@ -141,8 +135,6 @@ class EthernetIpEvents : public SystemResource {
 
 uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t state) {
   SystemEvent* system_event = reinterpret_cast<SystemEvent*>(data);
-  printf("event: system_event->base=%s, system_event->id=%d, state=0x%02x\n", system_event->base, system_event->id,state);
-
   if (system_event->base == ETH_EVENT) {
     switch (system_event->id) {
       case ETHERNET_EVENT_CONNECTED:
@@ -171,7 +163,7 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
         break;
       }
       case IP_EVENT_ETH_LOST_IP: {
-        static_cast<IPEvents*>(resource)->update_ip(0);
+        static_cast<EthernetIpEvents*>(resource)->clear_ip();
         state |= ETHERNET_DHCP_LOST;
         break;
       }
@@ -181,7 +173,7 @@ uint32_t EthernetResourceGroup::on_event(Resource* resource, word data, uint32_t
   } else {
     FATAL("unhandled event: %d\n", system_event->base);
   }
-  ets_printf("new state: 0x%02x\n", state);
+
   return state;
 }
 

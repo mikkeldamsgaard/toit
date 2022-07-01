@@ -530,8 +530,8 @@ namespace toit {
 
 #define MODULE_SPI_FLASH(PRIMITIVE)          \
   PRIMITIVE(init_sdcard, 6)                  \
-  PRIMITIVE(init_nor_flash, 6)               \
-  PRIMITIVE(init_nand_flash, 6)              \
+  PRIMITIVE(init_nor_flash, 7)               \
+  PRIMITIVE(init_nand_flash, 7)              \
   PRIMITIVE(close, 1)                        \
 
 #define MODULE_FILE(PRIMITIVE)               \

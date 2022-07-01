@@ -18,17 +18,11 @@
 #ifdef TOIT_FREERTOS
 
 #include "../resource.h"
-#include "../objects.h"
 #include "../objects_inline.h"
-#include "../process.h"
-#include "../primitive.h"
-#include "../resource_pool.h"
 #include "../vm.h"
 #include "spi_esp32.h"
 
-#include "esp_vfs.h"
 #include "driver/sdspi_host.h"
-#include "driver/spi_common.h"
 #include "driver/spi_master.h"
 #include <esp_vfs_fat.h>
 #include <esp_flash_spi_init.h>
@@ -128,7 +122,9 @@ PRIMITIVE(init_sdcard) {
 }
 
 PRIMITIVE(init_nor_flash) {
-  ARGS(cstring, mount_point, SPIResourceGroup, spi_bus, int, gpio_cs, int, format_if_mount_failed, int, max_files, int, allocation_unit_size)
+  ARGS(cstring, mount_point, SPIResourceGroup, spi_bus, int, gpio_cs,int, frequency, int, format_if_mount_failed, int, max_files, int, allocation_unit_size)
+
+  if (frequency < 0 || frequency > ESP_FLASH_80MHZ) INVALID_ARGUMENT;
 
   ByteArray* proxy = process->object_heap()->allocate_proxy();
   if (!proxy) ALLOCATION_FAILED;
@@ -148,7 +144,7 @@ PRIMITIVE(init_nor_flash) {
       .host_id = spi_bus->host_device(),
       .cs_io_num = gpio_cs,
       .io_mode = SPI_FLASH_FASTRD,
-      .speed = ESP_FLASH_40MHZ,
+      .speed = static_cast<esp_flash_speed_t>(frequency),
   };
 
   esp_flash_t *chip;
@@ -205,7 +201,8 @@ PRIMITIVE(init_nor_flash) {
 }
 
 PRIMITIVE(init_nand_flash) {
-  ARGS(cstring, mount_point, SPIResourceGroup, spi_bus, int, gpio_cs, int, format_if_mount_failed, int, max_files, int, allocation_unit_size);
+#ifdef CONFIG_SPI_FLASH_NAND_ENABLED
+  ARGS(cstring, mount_point, SPIResourceGroup, spi_bus, int, gpio_cs, int, frequency, int, format_if_mount_failed, int, max_files, int, allocation_unit_size);
 
   ByteArray* proxy = process->object_heap()->allocate_proxy();
   if (!proxy) ALLOCATION_FAILED;
@@ -223,12 +220,12 @@ PRIMITIVE(init_nand_flash) {
 
   spi_device_interface_config_t dev_cfg = {
       .mode = 0,
-      .clock_speed_hz = SPI_MASTER_FREQ_40M,
+      .clock_speed_hz = frequency,
       .spics_io_num = gpio_cs,
       .flags = SPI_DEVICE_HALFDUPLEX,
       .queue_size = 1
   };
-
+  ESP_LOGI("toitspi", "Setting up device with frequency: %d", frequency);
   spi_device_handle_t nand_spi_device;
   esp_err_t ret = spi_bus_add_device(SPI3_HOST, &dev_cfg, &nand_spi_device);
   if (ret != ESP_OK) {
@@ -241,6 +238,7 @@ PRIMITIVE(init_nand_flash) {
       .device_handle = nand_spi_device,
       .gc_factor = 45
   };
+  ESP_LOGI("toitspi", "Init nand flash device");
   spi_nand_flash_device_t *nand_flash_device;
   ret = spi_nand_flash_init_device(&nand_config, &nand_flash_device);
   if (ret != ESP_OK) {
@@ -249,6 +247,7 @@ PRIMITIVE(init_nand_flash) {
   }
   group->set_nand_flash_device(nand_flash_device);
 
+  ESP_LOGI("toitspi", "Mount allocation unit size: %d, max_files: %d",allocation_unit_size, max_files);
   esp_vfs_fat_mount_config_t mount_config = {
       .format_if_mount_failed = static_cast<bool>(format_if_mount_failed),
       .max_files = max_files,
@@ -263,6 +262,10 @@ PRIMITIVE(init_nand_flash) {
 
   proxy->set_external_address(group);
   return proxy;
+#else
+  UNIMPLEMENTED_PRIMITIVE;
+#endif // CONFIG_SPI_FLASH_NAND_ENABLED
+
 }
 
 PRIMITIVE(close) {
