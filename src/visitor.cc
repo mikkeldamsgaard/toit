@@ -55,7 +55,6 @@ void Visitor::accept(Object* object) {
       visit_task(Task::cast(heap_object));
       break;
   default:
-    printf("%d\n", heap_object->class_tag());
     FATAL("Unexpected class tag");
   }
 }
