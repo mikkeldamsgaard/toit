@@ -268,6 +268,7 @@ int BLEEventSource::on_gatt_server_characteristic_event(ble_gatt_access_ctxt* ct
 }
 
 
+
 void BLEEventSource::on_started_event() {
   Locker locker(mutex());
   for (auto resource : resources()) {

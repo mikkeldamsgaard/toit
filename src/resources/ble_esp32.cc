@@ -72,6 +72,7 @@ enum {
   kBLECharTypeWriteOnly = 2,
   kBLECharTypeReadWrite = 3,
   kBLECharTypeNotification = 4,
+  kBLECharTypeWriteOnlyNoRsp = 5,
 };
 
 const uint8 kBluetoothBaseUUID[16] = {
@@ -299,14 +300,14 @@ uint32_t BLEResourceGroup::on_event(Resource* resource, word data, uint32_t stat
                                                 event->subscribe.cur_indicate, event->subscribe.cur_notify);
       }
       break;
-    case BLE_GAP_EVENT_DISCONNECT:
-      auto ble_resource = resource->as<BLEResource*>();
+    case BLE_GAP_EVENT_DISCONNECT: {
+      auto ble_resource = resource->as<BLEResource *>();
       if (ble_resource->kind() == BLEResource::GATT) {
         Locker locker(_mutex);
-        GATTResource* gatt = ble_resource->as<GATTResource*>();
+        GATTResource *gatt = ble_resource->as<GATTResource *>();
         ASSERT(gatt->handle() != kInvalidHandle);
         gatt->set_handle(kInvalidHandle);
-        if (static_cast<ResourceList::Element*>(gatt)->is_not_linked()) {
+        if (static_cast<ResourceList::Element *>(gatt)->is_not_linked()) {
           delete gatt;
         }
       }
@@ -314,6 +315,9 @@ uint32_t BLEResourceGroup::on_event(Resource* resource, word data, uint32_t stat
         state &= ~kBLEConnected;
         state |= kBLEDisconnected;
       }
+      break;
+    }
+    case BLE_GAP_EVENT_NOTIFY_TX:
       break;
   }
 
@@ -374,6 +378,9 @@ int BLEResourceGroup::init_server() {
             break;
           case kBLECharTypeWriteOnly:
             gatt_svr_chars[characteristic_idx].flags = BLE_GATT_CHR_F_WRITE;
+            break;
+          case kBLECharTypeWriteOnlyNoRsp:
+            gatt_svr_chars[characteristic_idx].flags = BLE_GATT_CHR_F_WRITE_NO_RSP;
             break;
           case kBLECharTypeReadWrite:
             gatt_svr_chars[characteristic_idx].flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_READ;
@@ -476,7 +483,9 @@ static Object* object_to_mbuf(Process* process, Object* object, os_mbuf** result
     if (!object->byte_content(process->program(), &bytes, STRINGS_OR_BYTE_ARRAYS)) WRONG_TYPE;
     if (bytes.length() > 0) {
       os_mbuf* mbuf = ble_hs_mbuf_from_flat(bytes.address(), bytes.length());
-      if (!mbuf) MALLOC_FAILED;
+      if (!mbuf) {
+        QUOTA_EXCEEDED;process->program()->quota_exceeded();
+      }
       *result = mbuf;
     }
   }
@@ -1059,8 +1068,26 @@ PRIMITIVE(get_characteristics_value) {
   } else {
     ALLOCATION_FAILED;
   }
+}
 
-  return ret_val;
+PRIMITIVE(set_preferred_mtu) {
+  ARGS(int, mtu);
+
+  int ret_val = ble_att_set_preferred_mtu(mtu);
+
+  if (ret_val) {
+    INVALID_ARGUMENT;
+  } else {
+    return process->program()->null_object();
+  }
+}
+
+PRIMITIVE(get_att_mtu) {
+  ARGS(BLEServerCharacteristicResource, resource);
+
+  word mtu = ble_att_mtu(resource->conn_handle());
+
+  return Smi::from(mtu);
 }
 
 } // namespace toit
