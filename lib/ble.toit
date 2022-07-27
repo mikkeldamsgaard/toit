@@ -627,14 +627,14 @@ ble_add_server_service_ resource_group_ uuid:
 
 ble_add_server_characteristic_ service_resource uuid type value:
   ble_run_with_quota_backoff_ :
-    ble_add_server_characteristic_primitive_ service_resource uuid type value
+    return ble_add_server_characteristic_primitive_ service_resource uuid type value
 
 ble_add_server_characteristic_primitive_ service_resource uuid type value:
   #primitive.ble.add_server_characteristic
 
-ble_set_characteristics_value_ gatt new_value:
+ble_set_characteristics_value_ gatt new_value -> none:
   ble_run_with_quota_backoff_ :
-    #primitive.ble.set_characteristics_value
+    ble_set_characteristics_value_primitive_ gatt new_value
 
 ble_set_characteristics_value_primitive_ gatt new_value:
   #primitive.ble.set_characteristics_value
