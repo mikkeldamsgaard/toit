@@ -241,7 +241,8 @@ class RemoteCharacteristic:
   Writes the value of the characteristic on the remote service.
   */
   write_value value/ByteArray -> none:
-    ble_send_data_ service.client_.gatt_ handle value
+    ble_run_with_quota_backoff_ :
+      ble_send_data_ service.client_.gatt_ handle value
 
 /**
 A client connected to a remote device.
@@ -393,7 +394,11 @@ class ReadOnlyCharacteristic extends Characteristic:
   value_/ByteArray := #[]
 
   constructor service/Service uuid/uuid_pkg.Uuid value/ByteArray:
-    resource := ble_add_server_characteristic_ service.resource_ uuid.to_byte_array BLE_CHR_TYPE_READ_ONLY_ value
+    resource := ble_add_server_characteristic_
+        service.resource_
+        uuid.to_byte_array
+        BLE_CHR_TYPE_READ_ONLY_
+        value
     super service resource uuid
     value_ = value
 
@@ -420,7 +425,11 @@ A characteristic that allows both read and write by the client.
 */
 class ReadWriteCharacteristic extends WritableCharacteristic:
   constructor service/Service uuid/uuid_pkg.Uuid value/ByteArray:
-    resource := ble_add_server_characteristic_ service.resource_ uuid.to_byte_array BLE_CHR_TYPE_READ_WRITE_ value
+    resource := ble_add_server_characteristic_
+        service.resource_
+        uuid.to_byte_array
+        BLE_CHR_TYPE_READ_WRITE_
+        value
     super service resource uuid
 
   value= value/ByteArray -> none:
@@ -432,7 +441,11 @@ A characteristic that the client can subscribe to changes on.
 */
 class NotificationCharacteristic extends Characteristic:
   constructor service/Service uuid/uuid_pkg.Uuid:
-    resource := ble_add_server_characteristic_ service.resource_ uuid.to_byte_array BLE_CHR_TYPE_NOTIFICATION_ null
+    resource := ble_add_server_characteristic_
+        service.resource_
+        uuid.to_byte_array
+        BLE_CHR_TYPE_NOTIFICATION_
+        null
     super service resource uuid
 
   value= value/ByteArray -> none:
@@ -613,9 +626,17 @@ ble_add_server_service_ resource_group_ uuid:
   #primitive.ble.add_server_service
 
 ble_add_server_characteristic_ service_resource uuid type value:
+  ble_run_with_quota_backoff_ :
+    ble_add_server_characteristic_primitive_ service_resource uuid type value
+
+ble_add_server_characteristic_primitive_ service_resource uuid type value:
   #primitive.ble.add_server_characteristic
 
 ble_set_characteristics_value_ gatt new_value:
+  ble_run_with_quota_backoff_ :
+    #primitive.ble.set_characteristics_value
+
+ble_set_characteristics_value_primitive_ gatt new_value:
   #primitive.ble.set_characteristics_value
 
 ble_notify_characteristics_value_ gatt new_value:
@@ -628,10 +649,13 @@ ble_get_mtu_ gatt:
   #primitive.ble.get_att_mtu
 
 ble_run_with_quota_backoff_ [block]:
+  u := Time.monotonic_us
   while true:
     e := catch:
       return block.call
     if e == "QUOTA_EXCEEDED":
       sleep --ms=10
+      if Time.monotonic_us - u > 2 * 1000 * 1000:
+        throw "Timeout waiting for BLE layer to empty buffers"
       continue
     throw e

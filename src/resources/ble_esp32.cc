@@ -484,7 +484,7 @@ static Object* object_to_mbuf(Process* process, Object* object, os_mbuf** result
     if (bytes.length() > 0) {
       os_mbuf* mbuf = ble_hs_mbuf_from_flat(bytes.address(), bytes.length());
       if (!mbuf) {
-        QUOTA_EXCEEDED;process->program()->quota_exceeded();
+        QUOTA_EXCEEDED;
       }
       *result = mbuf;
     }
