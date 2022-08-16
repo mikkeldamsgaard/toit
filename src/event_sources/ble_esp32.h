@@ -149,6 +149,7 @@ class BLEServerCharacteristicResource: public Resource, public BLEServerCharacte
 
   void set_mbuf_received(os_mbuf* mbuf);
   os_mbuf* mbuf_received();
+  void put_mbuf_back(os_mbuf* mbuf);
 
   void set_subscription_status(bool indicate, bool notify, uint16 conn_handle) {
     _indicate = indicate;

@@ -284,9 +284,6 @@ void BLEServerCharacteristicResource::set_mbuf_received(os_mbuf* mbuf) {
   Locker locker(_mutex);
   if (_mbuf_received == null)  {
     _mbuf_received = mbuf;
-  } else if (mbuf == null) {
-    os_mbuf_free_chain(_mbuf_received);
-    _mbuf_received = null;
   } else {
     os_mbuf_concat(_mbuf_received, mbuf);
   }
@@ -294,7 +291,19 @@ void BLEServerCharacteristicResource::set_mbuf_received(os_mbuf* mbuf) {
 
 os_mbuf* BLEServerCharacteristicResource::mbuf_received() {
   Locker locker(_mutex);
-  return _mbuf_received;
+  auto tmp = _mbuf_received;
+  _mbuf_received = null;
+  return tmp;
+}
+
+void BLEServerCharacteristicResource::put_mbuf_back(os_mbuf *mbuf) {
+  Locker locker(_mutex);
+  if (_mbuf_received == null) {
+    _mbuf_received = mbuf;
+  } else {
+    os_mbuf_concat(mbuf, _mbuf_received);
+    _mbuf_received = mbuf;
+  }
 }
 
 void BLEServerCharacteristicResource::set_mbuf_to_send(os_mbuf* mbuf) {

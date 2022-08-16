@@ -1063,9 +1063,13 @@ PRIMITIVE(get_characteristics_value) {
   Object* ret_val = convert_mbuf_to_heap_object(process, mbuf);
 
   if (ret_val != null) {
-    resource->set_mbuf_received(null);
+    os_mbuf_free_chain(mbuf);
+    ByteArray::Bytes bytes((ByteArray*)ret_val);
+    ESP_LOGI("ble", "!%02x %02x %02x %02x", bytes.address()[0], bytes.address()[1], bytes.address()[2], bytes.address()[3]);
     return ret_val;
   } else {
+    printf("put_back!\n");
+    resource->put_mbuf_back(mbuf);
     ALLOCATION_FAILED;
   }
 }
