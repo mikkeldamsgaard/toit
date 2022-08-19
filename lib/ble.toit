@@ -650,13 +650,8 @@ ble_get_mtu_ gatt:
   #primitive.ble.get_att_mtu
 
 ble_run_with_quota_backoff_ [block]:
-  u := Time.monotonic_us
+  start := Time.monotonic_us
   while true:
-    e := catch:
-      return block.call
-    if e == "QUOTA_EXCEEDED":
-      sleep --ms=10
-      if Time.monotonic_us - u > 2 * 1000 * 1000:
-        throw "Timeout waiting for BLE layer to empty buffers"
-      continue
-    throw e
+    catch --unwind=(: it != "QUOTA_EXCEEDED"): return block.call
+    sleep --ms=10
+    if Time.monotonic_us - start > 2_000_000: throw DEADLINE_EXCEEDED_ERROR
