@@ -33,6 +33,7 @@ class Port implements reader.Reader:
   /** Amount of encountered errors. */
   errors := 0
 
+  baud_rate_ := ?
   /**
   Constructs a UART port using the given $tx for transmission and $rx
     for read.
@@ -75,6 +76,7 @@ class Port implements reader.Reader:
       stop_bits
       parity
       tx_flags
+    baud_rate_ = baud_rate
     state_ = ResourceState_ resource_group_ uart_
 
   /**
@@ -84,8 +86,10 @@ class Port implements reader.Reader:
     baud rate.
   */
   set_baud_rate baud_rate/int:
+    baud_rate_ = baud_rate
     uart_set_baud_rate_ uart_ baud_rate
 
+  baud_rate: return baud_rate_
   /**
   Closes this UART port and release all associated resources.
   */
