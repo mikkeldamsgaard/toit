@@ -254,11 +254,6 @@ void Process::_append_message(Message* message) {
     obj_notify->mark_queued();
   }
   _messages.append(message);
-  _messages_cnt++;
-
-  if (_messages_cnt > 250) {
-    printf("WARNING: Message cnt: %i > 250, id=%i\n", _messages_cnt, _id);
-  }
 }
 
 bool Process::has_messages() {
@@ -275,7 +270,6 @@ void Process::remove_first_message() {
   Locker locker(OS::scheduler_mutex());  // Fix this
   ASSERT(!_messages.is_empty());
   Message* message = _messages.remove_first();
-  _messages_cnt--;
   if (message->is_object_notify()) {
     if (!static_cast<ObjectNotifyMessage*>(message)->mark_dequeued()) return;
   }
