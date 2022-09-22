@@ -241,7 +241,7 @@ class Process : public ProcessListFromProcessGroup::Element,
   int64 _last_bytes_allocated;
 
   MessageFIFO _messages;
-
+  int _messages_cnt = 0;
   SystemMessage* _termination_message;
 
   bool _random_seeded;
