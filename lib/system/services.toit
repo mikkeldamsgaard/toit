@@ -37,18 +37,30 @@ abstract class ServiceClient:
 
   _name_/string? := null
   _version_/List? := null
+  _default_timeout_/int? ::= ?
+
+  static DEFAULT_OPEN_TIMEOUT_MS /int ::= 100
 
   constructor --open/bool=true:
+    // If we're opening the client as part of constructing it, we instruct the
+    // service discovery service to wait for the requested service to be provided.
+    _default_timeout_ = open ? DEFAULT_OPEN_TIMEOUT_MS : null
     if open and not this.open: throw "Cannot find service"
 
   abstract open -> ServiceClient?
 
-  open_ uuid/string major/int minor/int --pid/int?=null -> ServiceClient?:
+  open_ uuid/string major/int minor/int -> ServiceClient?
+      --pid/int?=null
+      --timeout/int?=_default_timeout_:
     if _id_: throw "Already opened"
     if pid:
       process_send_ pid SYSTEM_RPC_NOTIFY_ [SERVICES_MANAGER_NOTIFY_ADD_PROCESS, current_process_]
     else:
-      pid = _client_.discover uuid
+      if timeout:
+        catch --unwind=(: it != DEADLINE_EXCEEDED_ERROR):
+          with_timeout --ms=timeout: pid = _client_.discover uuid true
+      else:
+        pid = _client_.discover uuid false
       if not pid: return null
     // Open the client by doing a RPC-call to the discovered process.
     // This returns the client id necessary for invoking service methods.
@@ -84,7 +96,7 @@ abstract class ServiceClient:
     _id_ = _name_ = _version_ = _pid_ = null
     remove_finalizer this
     ServiceResourceProxyManager_.unregister_all id
-    rpc.invoke pid RPC_SERVICES_CLOSE_ id
+    critical_do: rpc.invoke pid RPC_SERVICES_CLOSE_ id
 
   stringify -> string:
     return "service:$_name_@$(_version_.join ".")"
@@ -233,6 +245,9 @@ abstract class ServiceResource implements rpc.RpcSerializable:
 
   abstract on_closed -> none
 
+  is_closed -> bool:
+    return _handle_ == null
+
   /**
   The $notify_ method is used for sending notifications to remote clients'
     resource proxies. The notifications are delivered asynchronously and
@@ -322,6 +337,7 @@ class ServiceResourceProxyManager_ implements SystemMessageHandler_:
 
 class ServiceManager_ implements SystemMessageHandler_:
   static instance := ServiceManager_
+  static uninitialized/bool := true
 
   broker_/ServiceRpcBroker_ ::= ServiceRpcBroker_
 
@@ -347,6 +363,10 @@ class ServiceManager_ implements SystemMessageHandler_:
         resource/ServiceResource? := service._find_resource_ client arguments[1]
         if resource: resource.close
     broker_.install
+    uninitialized = false
+
+  static is_empty -> bool:
+    return uninitialized or instance.services_by_uuid_.is_empty
 
   listen uuid/string service/ServiceDefinition -> none:
     services_by_uuid_[uuid] = service
@@ -371,7 +391,7 @@ class ServiceManager_ implements SystemMessageHandler_:
     pid/int? := clients_.get client
     if not pid: return  // Already closed.
     process_send_ pid SYSTEM_RPC_NOTIFY_RESOURCE_ [client, handle, notification]
-    yield  // Yield to allow intra-process messages to be processed.
+    if not is_processing_messages_: yield  // Yield to allow intra-process messages to be processed.
 
   close client/int -> none:
     pid/int? := clients_.get client
@@ -395,7 +415,7 @@ class ServiceManager_ implements SystemMessageHandler_:
     // We avoid manipulating the clients set in the $close
     // method by taking ownership of it here.
     clients_by_pid_.remove pid
-    task:: clients.do: close it
+    clients.do: close it
 
   on_message type/int gid/int pid/int message/any -> none:
     assert: type == SYSTEM_RPC_NOTIFY_

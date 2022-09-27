@@ -109,16 +109,17 @@ class WifiResourceGroup : public ResourceGroup {
     return esp_wifi_start();
   }
 
-  int rssi() {
+  bool rssi(int8* output) {
     wifi_ap_record_t ap_info;
     esp_err_t err = esp_wifi_sta_get_ap_info(&ap_info);
-    if (err != ERR_OK) return 0;
-    return ap_info.rssi;
+    if (err != ERR_OK) return false;
+    *output = ap_info.rssi;
+    return true;
   }
 
   ~WifiResourceGroup() {
     FATAL_IF_NOT_ESP_OK(esp_wifi_deinit());
-    esp_netif_destroy(_netif);
+    esp_netif_destroy_default_wifi(_netif);
     wifi_pool.put(_id);
   }
 
@@ -260,18 +261,50 @@ PRIMITIVE(init) {
   int id = wifi_pool.any();
   if (id == kInvalidWifi) OUT_OF_BOUNDS;
 
-  esp_netif_t* netif = ap ? esp_netif_create_default_wifi_ap() : esp_netif_create_default_wifi_sta();
+  // We cannot use the esp_netif_create_default_wifi_xxx() functions,
+  // because they do not correctly check for malloc failure.
+  esp_netif_t* netif = null;
+  if (ap) {
+    esp_netif_config_t netif_ap_config = ESP_NETIF_DEFAULT_WIFI_AP();
+    netif = esp_netif_new(&netif_ap_config);
+  } else {
+    esp_netif_config_t netif_sta_config = ESP_NETIF_DEFAULT_WIFI_STA();
+    netif = esp_netif_new(&netif_sta_config);
+  }
+
   if (!netif) {
     wifi_pool.put(id);
     MALLOC_FAILED;
   }
 
+  if (ap) {
+    esp_netif_attach_wifi_ap(netif);
+    esp_wifi_set_default_wifi_ap_handlers();
+  } else {
+    esp_netif_attach_wifi_station(netif);
+    esp_wifi_set_default_wifi_sta_handlers();
+  }
+
+  esp_err_t err = nvs_flash_init();
+  if (err != ESP_OK) {
+    esp_netif_destroy_default_wifi(netif);
+    wifi_pool.put(id);
+    return Primitive::os_error(err, process);
+  }
+
   // Create a thread that takes care of logging into the Wifi AP.
   wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
   init_config.nvs_enable = 0;
-  esp_err_t err = esp_wifi_init(&init_config);
+  if (!OS::use_spiram_for_heap()) {
+    // Configuring ESP-IDF for SPIRAM support dramatically increases the amount
+    // of memory that the Wifi uses.  If the SPIRAM is not actually present on
+    // the current board we need to set the values back to zero.
+    init_config.cache_tx_buf_num = 0;
+    init_config.feature_caps &= ~CONFIG_FEATURE_CACHE_TX_BUF_BIT;
+  }
+  err = esp_wifi_init(&init_config);
   if (err != ESP_OK) {
-    esp_netif_destroy(netif);
+    esp_netif_destroy_default_wifi(netif);
     wifi_pool.put(id);
     return Primitive::os_error(err, process);
   }
@@ -279,7 +312,7 @@ PRIMITIVE(init) {
   err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
   if (err != ESP_OK) {
     FATAL_IF_NOT_ESP_OK(esp_wifi_deinit());
-    esp_netif_destroy(netif);
+    esp_netif_destroy_default_wifi(netif);
     wifi_pool.put(id);
     return Primitive::os_error(err, process);
   }
@@ -288,7 +321,7 @@ PRIMITIVE(init) {
       process, SystemEventSource::instance(), id, netif);
   if (!resource_group) {
     FATAL_IF_NOT_ESP_OK(esp_wifi_deinit());
-    esp_netif_destroy(netif);
+    esp_netif_destroy_default_wifi(netif);
     wifi_pool.put(id);
     MALLOC_FAILED;
   }
@@ -430,8 +463,8 @@ PRIMITIVE(get_ip) {
 
 PRIMITIVE(get_rssi) {
   ARGS(WifiResourceGroup, group);
-  int rssi = group->rssi();
-  if (rssi == 0) return process->program()->null_object();
+  int8 rssi;
+  if (!group->rssi(&rssi)) return process->program()->null_object();
   return Smi::from(rssi);
 }
 #endif

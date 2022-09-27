@@ -3,6 +3,7 @@
 // found in the lib/LICENSE file.
 
 import encoding.ubjson
+import system.trace show send_trace_message
 
 ESP_RST_UNKNOWN   ::= 0 // Reset reason can not be determined.
 ESP_RST_POWERON   ::= 1 // Reset due to power-on event.
@@ -71,6 +72,22 @@ enable_external_wakeup pin_mask/int on_any_high/bool -> none:
 ext1_wakeup_status pin_mask/int -> int:
   #primitive.esp32.ext1_wakeup_status
 
+/**
+Enables waking up from touchpad triggers.
+The ESP32 wakes up if any configured pin has its value drop below their threshold.
+Use $touchpad_wakeup_status to find which pin has triggered the wakeup.
+*/
+enable_touchpad_wakeup -> none:
+  #primitive.esp32.enable_touchpad_wakeup
+
+/**
+Returns the pin number that triggered the wakeup.
+
+Returns -1 if the wakeup wasn't caused by a touchpad.
+*/
+touchpad_wakeup_status -> int:
+  #primitive.esp32.touchpad_wakeup_status
+
 image_config -> Map?:
   config_data := image_config_
   if config_data[0] == 0: return null
@@ -119,3 +136,12 @@ There is only one RTC memory on the device, so all tasks or processes have
 rtc_user_bytes -> ByteArray:
   #primitive.esp32.rtc_user_bytes
 
+/**
+Produces (as a system message) a report over the usage of memory at the OS level.
+*/
+memory_page_report -> none:
+  report := memory_page_report_
+  send_trace_message report
+
+memory_page_report_ -> ByteArray:
+  #primitive.esp32.memory_page_report

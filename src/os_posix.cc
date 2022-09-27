@@ -222,6 +222,7 @@ void OS::set_up() {
   Thread::ensure_system_thread();
   _global_mutex = allocate_mutex(0, "Global mutex");
   _scheduler_mutex = allocate_mutex(4, "Scheduler mutex");
+  _resource_mutex = allocate_mutex(99, "Resource mutex");
 }
 
 Thread* Thread::current() {
@@ -288,6 +289,11 @@ const uint8* OS::image_uuid() {
   }
   fclose(file);
   return uuid;
+}
+
+const uword* OS::image_bundled_programs_table() {
+  FATAL("should not be used on posix")
+  return null;
 }
 
 uint8* OS::image_config(size_t *length) {

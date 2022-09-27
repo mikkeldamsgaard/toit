@@ -17,6 +17,9 @@
 
 #ifdef TOIT_FREERTOS
 
+#ifdef CONFIG_IDF_TARGET_ESP32
+#include <esp_efuse.h>
+#endif
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <esp_sleep.h>
@@ -51,12 +54,32 @@
 namespace toit {
 
 // Flags used to get memory for the Toit heap, which needs to be fast and 8-bit
-// capable.
+// capable.  We will set this to the most useful value when we have detected
+// which types of RAM are available.
+bool OS::_use_spiram_for_heap = true;
+bool OS::_use_spiram_for_metadata = false;
 #ifdef CONFIG_TOIT_USE_SPIRAM
-static const int TOIT_HEAP_CAPS_FLAGS = MALLOC_CAP_SPIRAM;
+static const int EXTERNAL_CAPS = MALLOC_CAP_SPIRAM;
 #else
-static const int TOIT_HEAP_CAPS_FLAGS = MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+static const int EXTERNAL_CAPS = MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM;
 #endif
+static const int INTERNAL_CAPS = MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+
+int OS::toit_heap_caps_flags_for_heap() {
+  if (use_spiram_for_heap()) {
+    return EXTERNAL_CAPS;
+  } else {
+    return INTERNAL_CAPS;
+  }
+}
+
+int OS::toit_heap_caps_flags_for_metadata() {
+  if (use_spiram_for_metadata()) {
+    return EXTERNAL_CAPS;
+  } else {
+    return INTERNAL_CAPS;
+  }
+}
 
 void panic_put_char(char c) {
   while (((READ_PERI_REG(UART_STATUS_REG(CONFIG_ESP_CONSOLE_UART_NUM)) >> UART_TXFIFO_CNT_S)&UART_TXFIFO_CNT) >= 126) ;
@@ -322,6 +345,7 @@ void Thread::join() {
   if (xSemaphoreTake(thread->terminated, portMAX_DELAY) != pdTRUE) {
     FATAL("Thread join failed");
   }
+  vSemaphoreDelete(thread->terminated);
   delete thread;
   _handle = null;
 }
@@ -344,6 +368,12 @@ void OS::set_up() {
   Thread::ensure_system_thread();
   _global_mutex = allocate_mutex(0, "Global mutex");
   _scheduler_mutex = allocate_mutex(4, "Scheduler mutex");
+  _resource_mutex = allocate_mutex(99, "Resource mutex");
+#ifdef CONFIG_IDF_TARGET_ESP32
+  // This will normally return 1 or 3.  Perhaps later, more
+  // CPU revisions will appear.
+  _cpu_revision = esp_efuse_get_chip_ver();
+#endif
 }
 
 // Mutex forwarders.
@@ -364,12 +394,7 @@ void OS::dispose(ConditionVariable* condition) { delete condition; }
 void* OS::allocate_pages(uword size) {
   size = Utils::round_up(size, TOIT_PAGE_SIZE);
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + TOIT_HEAP_MALLOC_TAG);
-
-  multi_heap_info_t mem_info;
-  heap_caps_get_info(&mem_info, TOIT_HEAP_CAPS_FLAGS);
-  if (mem_info.total_free_bytes < 16*KB) return null;
-
-  void* allocation = heap_caps_aligned_alloc(TOIT_PAGE_SIZE, size, TOIT_HEAP_CAPS_FLAGS);
+  void* allocation = heap_caps_aligned_alloc(TOIT_PAGE_SIZE, size, toit_heap_caps_flags_for_heap());
   return allocation;
 }
 
@@ -378,7 +403,9 @@ void OS::free_pages(void* address, uword size) {
 }
 
 void* OS::grab_virtual_memory(void* address, uword size) {
-  return malloc(size);
+  // On ESP32 this is only used for allocating the heap metadata.  We put this
+  // in the same space as the heap itself.
+  return heap_caps_malloc(size, toit_heap_caps_flags_for_metadata());
 }
 
 void OS::ungrab_virtual_memory(void* address, uword size) {
@@ -392,8 +419,20 @@ bool OS::use_virtual_memory(void* address, uword size) {
 void OS::unuse_virtual_memory(void* address, uword size) {}
 
 OS::HeapMemoryRange OS::get_heap_memory_range() {
-  multi_heap_info_t info {};
-  heap_caps_get_info(&info, TOIT_HEAP_CAPS_FLAGS);
+  multi_heap_info_t info = { 0 };
+
+  int caps = EXTERNAL_CAPS;
+  heap_caps_get_info(&info, caps);
+
+  bool has_spiram = info.lowest_address != null;
+
+  caps = INTERNAL_CAPS;
+  heap_caps_get_info(&info, caps);
+
+  if (has_spiram) {
+    _use_spiram_for_metadata = true;
+    printf("[toit] INFO: using SPIRAM for heap metadata.\n");
+  }
 
   // Older esp-idfs or mallocs other than cmpctmalloc won't set the
   // lowest_address and highest_address fields.
@@ -404,6 +443,7 @@ OS::HeapMemoryRange OS::get_heap_memory_range() {
     return range;
   }
 
+  // In this case use hard coded ranges for internal RAM.
   HeapMemoryRange range;
 #ifdef CONFIG_IDF_TARGET_ESP32S3
   range.address = reinterpret_cast<void*>(0x3fc90000);
@@ -512,27 +552,9 @@ class HeapSummaryPage {
     largest_free_ = 0;
   }
 
-  static int compute_type(uword tag) {
-    if (tag == 0) {
-      tag = NULL_MALLOC_TAG;
-    } else if (tag == 'W') {
-      tag = WIFI_MALLOC_TAG;
-    } else if (tag == ITERATE_TAG_FREE) {
-      tag = FREE_MALLOC_TAG;
-    } else if (tag == ITERATE_TAG_HEAP_OVERHEAD) {
-      tag = HEAP_OVERHEAD_MALLOC_TAG;
-    } else {
-      tag -= ITERATE_CUSTOM_TAGS;
-      if (tag < 0 || tag >= NUMBER_OF_MALLOC_TAGS) {
-        tag = UNKNOWN_MALLOC_TAG;
-      }
-    }
-    return tag;
-  }
-
   int register_user(uword tag, uword size) {
     uint16 saturated_size = Utils::min(size, 0xffffu);
-    int type = compute_type(tag);
+    int type = compute_allocation_type(tag);
     users_ |= 1 << type;
     sizes_[type] += saturated_size;
     counts_[type]++;
@@ -544,36 +566,36 @@ class HeapSummaryPage {
 
   void print() {
     if (address_ == 0) return;
-    printf("  ├────────────┼─────────────────────────────────────────────┤\n");
-    printf("  │ %p │   Largest free = %-5d                      │\n",
-        reinterpret_cast<void*>(address_), largest_free_);
-    printf("  │            ├───────────┬─────────┬───────────────────────┤\n");
+    printf("  ┌────────────┬─────────────────────────────────────────────┐\n");
+    printf("  │ Page:      │   Largest free = %-5d                      │\n",
+        largest_free_);
+    printf("  │ %p ├───────────┬─────────┬───────────────────────┤\n",
+        reinterpret_cast<void*>(address_));
     printf("  │            │   Bytes   │  Count  │  Type                 │\n");
     printf("  │            ├───────────┼─────────┼───────────────────────┤\n");
     for (int i = 0; i < NUMBER_OF_MALLOC_TAGS; i++) {
       if (users_ & (1 << i)) {
-        printf("  │            │ %7d   │ %6d  │  %-19s  │\n",
+        printf("  │            │ %7d   │ %6d  │  %-20s │\n",
              sizes_[i], counts_[i], HeapSummaryPage::name_of_type(i));
       }
     }
-    printf("  ├────────────┼───────────┴─────────┴───────────────────────┤\n");
+    printf("  └────────────┴───────────┴─────────┴───────────────────────┘\n");
   }
 
   static const char* name_of_type(int tag) {
     switch (tag) {
       case MISC_MALLOC_TAG: return "misc";
       case EXTERNAL_BYTE_ARRAY_MALLOC_TAG: return "external byte array";
-      case BIGNUM_MALLOC_TAG: return "bignum";
+      case BIGNUM_MALLOC_TAG: return "tls/bignum";
       case EXTERNAL_STRING_MALLOC_TAG: return "external string";
       case TOIT_HEAP_MALLOC_TAG: return "toit";
-      case UNUSED_TOIT_HEAP_MALLOC_TAG: return "unused";
       case FREE_MALLOC_TAG: return "free";
       case LWIP_MALLOC_TAG: return "lwip";
       case HEAP_OVERHEAD_MALLOC_TAG: return "heap overhead";
       case EVENT_SOURCE_MALLOC_TAG: return "event source";
-      case OTHER_THREADS_MALLOC_TAG: return "other threads";
-      case THREAD_SPAWN_MALLOC_TAG: return "thread spawn";
-      case NULL_MALLOC_TAG: return "null tag";
+      case OTHER_THREADS_MALLOC_TAG: return "thread/other";
+      case THREAD_SPAWN_MALLOC_TAG: return "thread/spawn";
+      case NULL_MALLOC_TAG: return "untagged";
       case WIFI_MALLOC_TAG: return "wifi";
       case CUSTOM_THREAD_MALLOC_TAG: return "custom thread";
       case CUSTOM_OTHER_MALLOC_TAG: return "custom other";
@@ -636,7 +658,7 @@ class HeapSummaryCollector {
     }
     int type = current_page_
         ? current_page_->register_user(tag, size)
-        : HeapSummaryPage::compute_type(tag);
+        : compute_allocation_type(tag);
     // Disregard IRAM allocations.
     if (reinterpret_cast<uword>(address) < SOC_IRAM_LOW) {
       if (reinterpret_cast<uword>(address) > SOC_EXTRAM_DATA_HIGH) {
@@ -644,6 +666,9 @@ class HeapSummaryCollector {
       }
       counts_[type]++;
     }
+        : compute_allocation_type(tag);
+    sizes_[type] += size;
+    counts_[type]++;
   }
 
   void print(const char* marker) {
@@ -661,7 +686,7 @@ class HeapSummaryCollector {
     for (int i = 0; i < NUMBER_OF_MALLOC_TAGS; i++) {
       // Leave out free space and allocation types with no allocations.
       if (i == FREE_MALLOC_TAG || sizes_[i] == 0) continue;
-      printf("  | %7d   | %6d  |  %-19s  |\n",
+      printf("  │ %7d   │ %6d  │  %-20s │\n",
           sizes_[i], counts_[i], HeapSummaryPage::name_of_type(i));
       size += sizes_[i];
       // The reported overhead isn't really separate allocations, so
@@ -672,12 +697,15 @@ class HeapSummaryCollector {
     }
 
     multi_heap_info_t info;
-    heap_caps_get_info(&info, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    int caps = OS::toit_heap_caps_flags_for_heap();
+    heap_caps_get_info(&info, caps);
     int capacity_bytes = info.total_allocated_bytes + info.total_free_bytes;
     int used_bytes = size * 100 / capacity_bytes;
     printf("  └───────────┴─────────┴───────────────────────┘\n");
-    printf("  Total: %d bytes in %d allocations (%d%%)\n",
-        size, count, used_bytes);
+    printf("  Total: %d bytes in %d allocations (%d%%), largest free %dk, total free %dk\n",
+        size, count, used_bytes,
+        static_cast<int>(info.largest_free_block >> 10),
+        static_cast<int>(info.total_free_bytes >> 10));
 
     int page_count = 0;
     for (int i = 0; i < max_pages_; i++) {
@@ -685,17 +713,12 @@ class HeapSummaryCollector {
     }
     if (page_count == 0) return;
 
-    printf("  ┌────────────┬─────────────────────────────────────────────┐\n");
     for (int i = 0; i < max_pages_; i++) {
       pages_[i].print();
     }
     if (dropped_pages_ > 0) {
-      printf("  ├────────────┼─────────────────────────────────────────────┤\n");
-      printf("  │   %8d │   Unreported pages, hit limit of %-4d       │\n",
-        dropped_pages_, max_pages_);
-      printf("  ├────────────┼─────────────────────────────────────────────┤\n");
+      printf("\n  %d unreported pages, hit limit of %d.\n", dropped_pages_, max_pages_);
     }
-    printf("  └────────────┴─────────────────────────────────────────────┘\n");
   }
 
  private:
@@ -721,7 +744,8 @@ void OS::heap_summary_report(int max_pages, const char* marker) {
     return;
   }
   int flags = ITERATE_ALL_ALLOCATIONS | ITERATE_UNALLOCATED;
-  heap_caps_iterate_tagged_memory_areas(&collector, null, &register_allocation, flags);
+  int caps = OS::toit_heap_caps_flags_for_heap();
+  heap_caps_iterate_tagged_memory_areas(&collector, null, &register_allocation, flags, caps);
   collector.print(marker);
 }
 
@@ -735,19 +759,20 @@ void OS::heap_summary_report(int max_pages, const char* marker) { }
 #endif // def TOIT_CMPCTMALLOC
 
 static const int TOIT_IMAGE_DATA_SIZE = 1024;
-static const int TOIT_CONFIG_IMAGE_SIZE = TOIT_IMAGE_DATA_SIZE - UUID_SIZE;
+static const int TOIT_CONFIG_IMAGE_SIZE = TOIT_IMAGE_DATA_SIZE - UUID_SIZE - sizeof(uint32);
 
 class ImageData {
  public:
-  uint32_t image_pad = 0;
-  uint32_t image_magic1 = 0x7017da7a;  // "Toitdata"
+  uint32 image_pad = 0;
+  uint32 image_magic1 = 0x7017da7a;  // "Toitdata"
   // The data between image_magic1 and image_magic2 must be a multiple of 512
   // bytes, otherwise the patching utility will not detect it. Search for
   // 0x7017da7a. Note when updating this restriction is baked into the SDK that
   // you are updating *from* so it can't be fixed without multiple SDK updates.
-  uint8_t image_config[TOIT_CONFIG_IMAGE_SIZE] = {0};
-  uint8_t image_uuid[UUID_SIZE] = {0};
-  uint32_t image_magic2 = 0xc09f19;    // "config"
+  uint8 image_config[TOIT_CONFIG_IMAGE_SIZE] = {0};
+  uint8 image_uuid[UUID_SIZE] = {0};
+  uint32 image_bundled_programs_table = 0;
+  uint32 image_magic2 = 0xc09f19;    // "config"
 } __attribute__((packed));
 
 // Note, you can't declare this const because then the compiler thinks it can
@@ -757,6 +782,10 @@ __attribute__((section(".rodata_custom_desc"))) ImageData toit_image_data;
 
 const uint8* OS::image_uuid() {
   return toit_image_data.image_uuid;
+}
+
+const uword* OS::image_bundled_programs_table() {
+  return reinterpret_cast<const uword*>(toit_image_data.image_bundled_programs_table);
 }
 
 uint8* OS::image_config(size_t *length) {

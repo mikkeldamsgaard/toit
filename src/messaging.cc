@@ -33,6 +33,7 @@ enum MessageTag {
   TAG_ARRAY,
   TAG_DOUBLE,
   TAG_LARGE_INTEGER,
+  TAG_MAP,
 
   // MessageEncoder::encode_copy() relies on the fact that 'inline' tags
   // for strings and byte arrays directly follow their non-inline variants.
@@ -115,11 +116,19 @@ bool MessageEncoder::encode(Object* object) {
     Instance* instance = Instance::cast(object);
     Smi* class_id = instance->class_id();
     if (class_id == _program->list_class_id()) {
-      Object* backing = instance->at(0);
-      if (is_array(backing)) {
+      Object* backing = instance->at(Instance::LIST_ARRAY_INDEX);
+      if (is_smi(backing)) return false;
+      class_id = HeapObject::cast(backing)->class_id();
+      if (class_id == _program->array_class_id()) {
         Array* array = Array::cast(backing);
-        return encode_array(array, Smi::cast(instance->at(1))->value());
+        Object* size = instance->at(Instance::LIST_SIZE_INDEX);
+        if (!is_smi(size)) return false;
+        return encode_array(array, Smi::cast(size)->value());
+      } else if (class_id == _program->large_array_class_id()) {
+        printf("Can't serialize large array\n");
       }
+    } else if (class_id == _program->map_class_id()) {
+      return encode_map(instance);
     } else if (class_id == _program->byte_array_cow_class_id()) {
       return encode_copy(object, TAG_BYTE_ARRAY);
     } else if (class_id == _program->byte_array_slice_class_id()) {
@@ -150,7 +159,7 @@ bool MessageEncoder::encode(Object* object) {
     return encode_array(array, array->length());
   } else if (is_large_integer(object)) {
     write_uint8(TAG_LARGE_INTEGER);
-    write_uint64(bit_cast<uint64>(Double::cast(object)->value()));
+    write_uint64(bit_cast<uint64>(LargeInteger::cast(object)->value()));
     return true;
   } else if (is_heap_object(object)) {
     printf("[message encoder: cannot encode object with class tag = %d]\n", HeapObject::cast(object)->class_tag());
@@ -163,6 +172,46 @@ bool MessageEncoder::encode_array(Array* object, int size) {
   write_cardinal(size);
   for (int i = 0; i < size; i++) {
     if (!encode(object->at(i))) return false;
+  }
+  return true;
+}
+
+bool MessageEncoder::encode_map(Instance* instance) {
+  write_uint8(TAG_MAP);
+
+  Object* object = instance->at(Instance::MAP_BACKING_INDEX);
+  if (is_smi(object)) return false;
+  HeapObject* backing = HeapObject::cast(object);
+
+  object = instance->at(Instance::MAP_SIZE_INDEX);
+  if (!is_smi(object)) return false;
+  word size = Smi::cast(object)->value();
+
+  write_cardinal(size);
+  if (size == 0) return true;  // Do this before looking at the backing, which may be null.
+  Smi* class_id = backing->class_id();
+  if (class_id == _program->list_class_id()) {
+    object = Instance::cast(backing)->at(Instance::LIST_ARRAY_INDEX);
+    if (is_smi(object)) return false;
+    backing = HeapObject::cast(object);
+  }
+  class_id = backing->class_id();
+  if (class_id != _program->array_class_id()) {
+    if (class_id == _program->large_array_class_id()) {
+      printf("Can't serialize large map\n");
+    }
+    return false;
+  }
+  Array* array = Array::cast(backing);
+  int count = 0;
+  for (int i = 0; count < size; i += 2) {
+    Object* key = array->at(i);
+    Object* value = array->at(i + 1);
+    if (is_smi(key) || HeapObject::cast(key)->class_id() != _program->tombstone_class_id()) {
+      if (!encode(key)) return false;
+      if (!encode(value)) return false;
+      count++;
+    }
   }
   return true;
 }
@@ -187,6 +236,21 @@ bool MessageEncoder::encode_byte_array(ByteArray* object) {
 }
 
 #ifndef TOIT_FREERTOS
+bool MessageEncoder::encode_arguments(char** argv, int argc) {
+  write_uint8(TAG_ARRAY);
+  write_cardinal(argc);
+  for (int i = 0; i < argc; i++) {
+    int length = strlen(argv[i]);
+    write_uint8(TAG_STRING_INLINE);
+    write_cardinal(length);
+    if (!encoding_for_size()) {
+      memcpy(&_buffer[_cursor], argv[i], length);
+    }
+    _cursor += length;
+  }
+  return true;
+}
+
 bool MessageEncoder::encode_bundles(SnapshotBundle system, SnapshotBundle application) {
   write_uint8(TAG_ARRAY);
   write_cardinal(2);
@@ -335,6 +399,8 @@ Object* MessageDecoder::decode() {
       return decode_string(true);
     case TAG_ARRAY:
       return decode_array();
+    case TAG_MAP:
+      return decode_map();
     case TAG_BYTE_ARRAY:
       return decode_byte_array(false);
     case TAG_BYTE_ARRAY_INLINE:
@@ -429,6 +495,37 @@ Object* MessageDecoder::decode_array() {
   return result;
 }
 
+Object* MessageDecoder::decode_map() {
+  int size = read_cardinal();
+  Instance* result = _process->object_heap()->allocate_instance(_program->map_class_id());
+  if (result == null) {
+    _allocation_failed = true;
+    return null;
+  }
+  if (size == 0) {
+    result->at_put(Instance::MAP_SIZE_INDEX, Smi::from(0));
+    result->at_put(Instance::MAP_SPACES_LEFT_INDEX, Smi::from(0));
+    result->at_put(Instance::MAP_INDEX_INDEX, _program->null_object());
+    result->at_put(Instance::MAP_BACKING_INDEX, _program->null_object());
+    return result;
+  }
+  Array* array = _process->object_heap()->allocate_array(size * 2, Smi::zero());
+  if (array == null) {
+    _allocation_failed = true;
+    return null;
+  }
+  for (int i = 0; i < size * 2; i++) {
+    Object* inner = decode();
+    if (_allocation_failed) return null;
+    array->at_put(i, inner);
+  }
+  result->at_put(Instance::MAP_SIZE_INDEX, Smi::from(size));
+  result->at_put(Instance::MAP_SPACES_LEFT_INDEX, Smi::from(0));
+  result->at_put(Instance::MAP_INDEX_INDEX, _program->null_object());
+  result->at_put(Instance::MAP_BACKING_INDEX, array);
+  return result;
+}
+
 Object* MessageDecoder::decode_byte_array(bool inlined) {
   int length = read_cardinal();
   ByteArray* result = null;
@@ -495,8 +592,8 @@ Object* MessageDecoder::decode_large_integer() {
 
 uint8* MessageDecoder::read_pointer() {
   uint8* result;
-  memcpy(&result, &_buffer[_cursor], WORD_SIZE);
-  _cursor += WORD_SIZE;
+  memcpy(&result, &_buffer[_cursor], sizeof(result));
+  _cursor += sizeof(result);
   return result;
 }
 
@@ -515,8 +612,8 @@ uword MessageDecoder::read_cardinal() {
 
 uint64 MessageDecoder::read_uint64() {
   uint64 result;
-  memcpy(&result, &_buffer[_cursor], sizeof(uint64));
-  _cursor += WORD_SIZE;
+  memcpy(&result, &_buffer[_cursor], sizeof(result));
+  _cursor += sizeof(result);
   return result;
 }
 

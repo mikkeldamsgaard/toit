@@ -871,6 +871,9 @@ main:
 
   test_hash_code
 
+  test_substitute
+  test_upper_lower
+
   expect "fisk".size == 4 --message="string size test"
   expect ("A"[0]) == 'A' --message="string at test"
   expect ("fisk" + "fugl").size == 8
@@ -1636,3 +1639,75 @@ test_hash_code:
   expect_equals str.hash_code slice.hash_code
 
   expect_not hash1 == slice.hash_code
+
+test_substitute:
+  MAP ::= {
+    "variable": "fixed",
+    "value": "cost",
+  }
+  result := "Replace {{variable}} with {{value}}".substitute: MAP[it]
+  expect_equals "Replace fixed with cost" result
+
+  result = "Replace {{variable}} with {{value}} trailing text".substitute: MAP[it]
+  expect_equals "Replace fixed with cost trailing text" result
+
+  result = "".substitute: MAP[it]
+  expect_equals "" result
+
+  result = "{{variable}}".substitute: MAP[it]
+  expect_equals "fixed" result
+
+  result = "42foobarfizz103".substitute --open="foo" --close="fizz": "BAR"
+  expect_equals "42BAR103" result
+
+  result = "{{variable}} is not variable".substitute: MAP[it]
+  expect_equals "fixed is not variable" result
+
+  // Check that we remember to stringify.
+  "The time is {{time}} now.".substitute: Time.now.local
+
+  // Whitespace trimming.
+  result = "{{  variable  }} is not variable".substitute: MAP[it]
+  expect_equals "fixed is not variable" result
+
+  // Null means no change.
+  result = "{{  variable  }} is not variable".substitute: null
+  expect_equals "{{  variable  }} is not variable" result
+
+  // The opening sequence can be in the middle.
+  result = " - {{{{}} - ".substitute: it == "{{"
+  expect_equals " - true - " result
+
+  // But we don't count opens and closes, so the closing sequence can't be in
+  // the middle.
+  result = " - {{{{}}}} - ".substitute: it == "{{"
+  expect_equals " - true}} - " result
+
+test_upper_lower:
+  expect_equals "foo" "foo".to_ascii_lower
+  expect_equals "foo" "Foo".to_ascii_lower
+  expect_equals "foo" "FOO".to_ascii_lower
+  expect_equals "FOO" "foo".to_ascii_upper
+  expect_equals "FOO" "Foo".to_ascii_upper
+  expect_equals "FOO" "FOO".to_ascii_upper
+  expect_equals "" "".to_ascii_upper
+  expect_equals "" "".to_ascii_lower
+
+  // Unicode chars are not changed.
+  expect_equals "søen" "søen".to_ascii_lower
+  expect_equals "SøEN" "søen".to_ascii_upper
+
+  // Borderline cases.
+  expect_equals "@az[" "@AZ[".to_ascii_lower
+  expect_equals "@AZ[" "@AZ[".to_ascii_upper
+  expect_equals "`az{" "`az{".to_ascii_lower
+  expect_equals "`AZ{" "`az{".to_ascii_upper
+
+  // Contains only ASCII.
+  expect "".contains_only_ascii
+  expect "foo".contains_only_ascii
+  expect "FOO".contains_only_ascii
+  expect "\x7f".contains_only_ascii
+  expect "\x00".contains_only_ascii
+  expect_equals false ("søen".contains_only_ascii)
+  expect_equals false ("\x80".contains_only_ascii)

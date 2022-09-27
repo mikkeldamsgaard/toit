@@ -26,7 +26,6 @@ static const uint8 EXTERNAL_BYTE_ARRAY_MALLOC_TAG = 1;
 static const uint8 BIGNUM_MALLOC_TAG              = 2;
 static const uint8 EXTERNAL_STRING_MALLOC_TAG     = 3;
 static const uint8 TOIT_HEAP_MALLOC_TAG           = 4;
-static const uint8 UNUSED_TOIT_HEAP_MALLOC_TAG    = 5;
 static const uint8 FREE_MALLOC_TAG                = 6;
 static const uint8 LWIP_MALLOC_TAG                = 7;
 static const uint8 HEAP_OVERHEAD_MALLOC_TAG       = 8;
@@ -45,6 +44,8 @@ static const uint8 CODEC_MALLOC_TAG               = 18;
 static const uint8 I2S_MALLOC_TAG                 = 19;
 
 static const uint8 NUMBER_OF_MALLOC_TAGS          = 20;
+
+int compute_allocation_type(uword tag);
 
 #ifdef TOIT_CMPCTMALLOC
 

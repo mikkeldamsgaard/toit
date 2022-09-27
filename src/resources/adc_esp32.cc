@@ -17,8 +17,6 @@
 
 #ifdef TOIT_FREERTOS
 
-#include "adc_esp32.h"
-
 #include <driver/gpio.h>
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
@@ -30,7 +28,6 @@
 #include "../resource.h"
 #include "../vm.h"
 
-#include "../event_sources/gpio_esp32.h"
 #include "../event_sources/system_esp32.h"
 
 namespace toit {
@@ -175,6 +172,17 @@ static adc_atten_t get_atten(int mv) {
   return ADC_ATTEN_DB_11;
 }
 
+
+class AdcResource : public SimpleResource {
+ public:
+  TAG(AdcResource);
+  AdcResource(SimpleResourceGroup* group, adc_unit_t unit, int chan) : SimpleResource(group), unit(unit), chan(chan) {}
+
+  adc_unit_t unit;
+  int chan;
+  esp_adc_cal_characteristics_t calibration;
+};
+
 MODULE_IMPLEMENTATION(adc, MODULE_ADC)
 
 PRIMITIVE(init) {
@@ -193,13 +201,13 @@ PRIMITIVE(init) {
     esp_err_t err = adc1_config_width(ADC_WIDTH_BIT_12);
     if (err != ESP_OK) return Primitive::os_error(err, process);
 
-    err = adc1_config_channel_atten((adc1_channel_t)chan, atten);
+    err = adc1_config_channel_atten(static_cast<adc1_channel_t>(chan), atten);
     if (err != ESP_OK) return Primitive::os_error(err, process);
   } else if (allow_restricted) {
     chan = get_adc2_channel(pin);
     if (chan >= 0) {
       unit = ADC_UNIT_2;
-      esp_err_t err = adc2_config_channel_atten((adc2_channel_t)chan, atten);
+      esp_err_t err = adc2_config_channel_atten(static_cast<adc2_channel_t>(chan), atten);
       if (err != ESP_OK) return Primitive::os_error(err, process);
     } else {
       OUT_OF_RANGE;
@@ -213,22 +221,22 @@ PRIMITIVE(init) {
     ALLOCATION_FAILED;
   }
 
-  AdcState* state = null;
+  AdcResource* resource = null;
   { HeapTagScope scope(ITERATE_CUSTOM_TAGS + EXTERNAL_BYTE_ARRAY_MALLOC_TAG);
-    state = _new AdcState(group, unit, chan);
-    if (!state) MALLOC_FAILED;
+    resource = _new AdcResource(group, unit, chan);
+    if (!resource) MALLOC_FAILED;
   }
 
   const int DEFAULT_VREF = 1100;
-  esp_adc_cal_characterize(unit, atten, ADC_WIDTH_BIT_12, DEFAULT_VREF, &state->calibration);
+  esp_adc_cal_characterize(unit, atten, ADC_WIDTH_BIT_12, DEFAULT_VREF, &resource->calibration);
 
-  proxy->set_external_address(state);
+  proxy->set_external_address(resource);
 
   return proxy;
 }
 
 PRIMITIVE(get) {
-  ARGS(AdcState, state, int, samples);
+  ARGS(AdcResource, resource, int, samples);
 
   if (samples < 1 || samples > 64) OUT_OF_RANGE;
 
@@ -236,11 +244,11 @@ PRIMITIVE(get) {
 
   // Multisampling.
   for (int i = 0; i < samples; i++) {
-    if (state->unit == ADC_UNIT_1) {
-      adc_reading += adc1_get_raw((adc1_channel_t)state->chan);
+    if (resource->unit == ADC_UNIT_1) {
+      adc_reading += adc1_get_raw(static_cast<adc1_channel_t>(resource->chan));
     } else {
       int value = 0;
-      esp_err_t err = adc2_get_raw((adc2_channel_t)state->chan, ADC_WIDTH_BIT_12, &value);
+      esp_err_t err = adc2_get_raw(static_cast<adc2_channel_t>(resource->chan), ADC_WIDTH_BIT_12, &value);
       if (err != ESP_OK) return Primitive::os_error(err, process);
       adc_reading += value;
     }
@@ -249,17 +257,30 @@ PRIMITIVE(get) {
   adc_reading /= samples;
 
   // Convert adc_reading to voltage in mV.
-  uint32_t voltage = esp_adc_cal_raw_to_voltage(adc_reading, &state->calibration);
+  uint32_t voltage = esp_adc_cal_raw_to_voltage(adc_reading, &resource->calibration);
 
   return Primitive::allocate_double(voltage / 1000.0, process);
 }
 
+PRIMITIVE(get_raw) {
+  ARGS(AdcResource, resource);
+
+  int adc_reading;
+  if (resource->unit == ADC_UNIT_1) {
+    adc_reading = adc1_get_raw(static_cast<adc1_channel_t>(resource->chan));
+  } else {
+    esp_err_t err = adc2_get_raw(static_cast<adc2_channel_t>(resource->chan), ADC_WIDTH_BIT_12, &adc_reading);
+    if (err != ESP_OK) return Primitive::os_error(err, process);
+  }
+
+  return Smi::from(adc_reading);
+}
+
 PRIMITIVE(close) {
-  ARGS(ByteArray, raw_state);
+  ARGS(AdcResource, resource);
 
-  delete raw_state->as_external();
-
-  raw_state->clear_external_address();
+  resource->resource_group()->unregister_resource(resource);
+  resource_proxy->clear_external_address();
 
   return process->program()->null_object();
 }

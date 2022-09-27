@@ -21,10 +21,6 @@
 #include "scheduler.h"
 #include "vm.h"
 
-#ifdef TOIT_FREERTOS
-extern "C" uword toit_image_table;
-#endif
-
 namespace toit {
 
 MODULE_IMPLEMENTATION(programs_registry, MODULE_PROGRAMS_REGISTRY)
@@ -35,7 +31,7 @@ PRIMITIVE(next_group_id) {
 }
 
 PRIMITIVE(spawn) {
-  ARGS(int, offset, int, size, int, group_id);
+  ARGS(int, offset, int, size, int, group_id, Object, arguments);
 
   FlashAllocation* allocation = static_cast<FlashAllocation*>(FlashRegistry::memory(offset, size));
   if (allocation->type() != PROGRAM_TYPE) INVALID_ARGUMENT;
@@ -43,13 +39,33 @@ PRIMITIVE(spawn) {
   Program* program = static_cast<Program*>(allocation);
   if (!program->is_valid(offset, OS::image_uuid())) OUT_OF_BOUNDS;
 
+  int length = 0;
+  { MessageEncoder size_encoder(process, null);
+    if (!size_encoder.encode(arguments)) WRONG_TYPE;
+    length = size_encoder.size();
+  }
+
+  uint8* buffer = null;
+  { HeapTagScope scope(ITERATE_CUSTOM_TAGS + EXTERNAL_BYTE_ARRAY_MALLOC_TAG);
+    buffer = unvoid_cast<uint8*>(malloc(length));
+    if (buffer == null) MALLOC_FAILED;
+  }
+
+  MessageEncoder encoder(process, buffer);
+  if (!encoder.encode(arguments)) {
+    encoder.free_copied();
+    free(buffer);
+    if (encoder.malloc_failed()) MALLOC_FAILED;
+    OTHER_ERROR;
+  }
+
   InitialMemoryManager manager;
   if (!manager.allocate()) ALLOCATION_FAILED;
 
   ProcessGroup* process_group = ProcessGroup::create(group_id, program);
   if (!process_group) MALLOC_FAILED;
 
-  int pid = VM::current()->scheduler()->run_program(program, {}, process_group, manager.initial_chunk);
+  int pid = VM::current()->scheduler()->run_program(program, buffer, process_group, manager.initial_chunk);
   if (pid == Scheduler::INVALID_PROCESS_ID) {
     delete process_group;
     MALLOC_FAILED;
@@ -76,7 +92,7 @@ PRIMITIVE(kill) {
 
 PRIMITIVE(bundled_images) {
 #ifdef TOIT_FREERTOS
-  const uword* table = &toit_image_table;
+  const uword* table = OS::image_bundled_programs_table();
   int length = table[0];
 
   Array* result = process->object_heap()->allocate_array(length * 2, Smi::from(0));
@@ -96,6 +112,16 @@ PRIMITIVE(bundled_images) {
 #else
   return process->program()->empty_array();
 #endif
+}
+
+PRIMITIVE(assets) {
+  Program* program = process->program();
+  int length;
+  uint8* bytes;
+  if (program->assets_size(&bytes, &length) == 0) {
+    return process->object_heap()->allocate_internal_byte_array(0);
+  }
+  return process->object_heap()->allocate_external_byte_array(length, bytes, false, false);
 }
 
 } // namespace toit

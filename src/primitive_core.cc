@@ -61,9 +61,8 @@ MODULE_IMPLEMENTATION(core, MODULE_CORE)
 
 PRIMITIVE(write_string_on_stdout) {
   ARGS(cstring, message, bool, add_newline);
-  fprintf(stdout, "%s", message);
-  if (add_newline) fprintf(stdout, "\n");
-#ifndef TOIT_FREERTOS
+  fprintf(stdout, "%s%s", message, add_newline ? "\n" : "");
+#ifndef TOIT_FREERTOS \
   fflush(stdout);
 #endif
   return _raw_message;
@@ -71,24 +70,15 @@ PRIMITIVE(write_string_on_stdout) {
 
 PRIMITIVE(write_string_on_stderr) {
   ARGS(cstring, message, bool, add_newline);
-  fprintf(stderr, "%s", message);
-  if (add_newline) fprintf(stderr, "\n");
+  fprintf(stderr, "%s%s", message, add_newline ? "\n" : "");
 #ifndef TOIT_FREERTOS
   fflush(stderr);
 #endif
   return _raw_message;
 }
 
-PRIMITIVE(hatch_method) {
-  Method method = process->hatch_method();
-  int id = method.is_valid()
-      ? process->program()->absolute_bci_from_bcp(method.header_bcp())
-      : -1;
-  return Smi::from(id);
-}
-
-PRIMITIVE(hatch_args) {
-  uint8* arguments = process->hatch_arguments();
+PRIMITIVE(main_arguments) {
+  uint8* arguments = process->main_arguments();
   if (!arguments) return process->program()->empty_array();
 
   MessageDecoder decoder(process, arguments);
@@ -98,13 +88,38 @@ PRIMITIVE(hatch_args) {
     ALLOCATION_FAILED;
   }
 
-  process->clear_hatch_arguments();
+  process->clear_main_arguments();
   free(arguments);
   decoder.register_external_allocations();
   return decoded;
 }
 
-PRIMITIVE(hatch) {
+PRIMITIVE(spawn_arguments) {
+  uint8* arguments = process->spawn_arguments();
+  if (!arguments) return process->program()->empty_array();
+
+  MessageDecoder decoder(process, arguments);
+  Object* decoded = decoder.decode();
+  if (decoder.allocation_failed()) {
+    decoder.remove_disposing_finalizers();
+    ALLOCATION_FAILED;
+  }
+
+  process->clear_spawn_arguments();
+  free(arguments);
+  decoder.register_external_allocations();
+  return decoded;
+}
+
+PRIMITIVE(spawn_method) {
+  Method method = process->spawn_method();
+  int id = method.is_valid()
+      ? process->program()->absolute_bci_from_bcp(method.header_bcp())
+      : -1;
+  return Smi::from(id);
+}
+
+PRIMITIVE(spawn) {
   ARGS(Object, entry, Object, arguments)
   if (!is_smi(entry)) WRONG_TYPE;
 
@@ -133,7 +148,7 @@ PRIMITIVE(hatch) {
     OTHER_ERROR;
   }
 
-  Process* child = VM::current()->scheduler()->hatch(process->program(), process->group(), method, buffer, manager.initial_chunk);
+  Process* child = VM::current()->scheduler()->spawn(process->program(), process->group(), method, buffer, manager.initial_chunk);
   if (!child) MALLOC_FAILED;
 
   manager.dont_auto_free();
@@ -483,31 +498,6 @@ PRIMITIVE(command) {
   String* arg = process->allocate_string(Flags::program_name, &error);
   if (arg == null) return error;
   return arg;
-}
-
-PRIMITIVE(args) {
-  char** argv = process->args();
-  if (argv == null || argv[0] == null) {
-    // No argument are passed so use snapshot arguments program.
-    Array* snapshot_arguments = process->program()->snapshot_arguments();
-    // Copy and return the array.
-    int length = snapshot_arguments->length();
-    Array* result = process->object_heap()->allocate_array(length, process->program()->null_object());
-    if (result == null) ALLOCATION_FAILED;
-    for (int index = 0; index < length; index++) result->at_put(index, snapshot_arguments->at(index));
-    return result;
-  }
-  int argc = 0;
-  while (argv[argc] != null) argc++;
-  Array* result = process->object_heap()->allocate_array(argc, process->program()->null_object());
-  if (result == null) ALLOCATION_FAILED;
-  for (int index = 0; index < argc; index++) {
-    Error* error = null;
-    String* arg = process->allocate_string(argv[index], &error);
-    if (arg == null) return error;
-    Array::cast(result)->at_put(index, arg);
-  }
-  return result;
 }
 
 PRIMITIVE(smi_add) {
@@ -1032,6 +1022,11 @@ PRIMITIVE(count_leading_zeros) {
   return Smi::from(Utils::clz(v));
 }
 
+PRIMITIVE(popcount) {
+  ARGS(int64, v);
+  return Smi::from(Utils::popcount(v));
+}
+
 PRIMITIVE(string_length) {
   ARGS(StringOrSlice, receiver);
   return Smi::from(receiver.length());
@@ -1167,26 +1162,31 @@ PRIMITIVE(string_compare) {
 PRIMITIVE(string_rune_count) {
   ARGS(Blob, bytes)
   word count = 0;
+  const uword WORD_MASK = WORD_SIZE - 1;
   const uint8* address = bytes.address();
   int len = bytes.length();
-  // This algorithm counts the runes in 4-byte chunks of UTF-8.  For a 64 bit
-  // platform we could move to 8-byte chunks for more speed.
-  // We have to ensure that the memory reads are 4-byte aligned to avoid memory
+  // This algorithm counts the runes in word-sized chunks of UTF-8.
+  // We have to ensure that the memory reads are word aligned to avoid memory
   // faults.
   // The first mask will make sure we skip over the bytes we don't need.
-  int skipped_start_bytes = reinterpret_cast<uword>(address) & 3;
+  int skipped_start_bytes = reinterpret_cast<uword>(address) & WORD_MASK;
   address -= skipped_start_bytes;  // Align the address
   len += skipped_start_bytes;
 
+#ifdef BUILD_64
+  const uword HIGH_BITS_IN_BYTES = 0x8080808080808080LL;
+#else
+  const uword HIGH_BITS_IN_BYTES = 0x80808080;
+#endif
+
   // Create a mask that skips the first bytes we shouldn't count.
   // This code assumes a little-endian architecture.
-  uint32 mask = 0x80808080 << (skipped_start_bytes * 8);
+  uword mask = HIGH_BITS_IN_BYTES << (skipped_start_bytes * BYTE_BIT_SIZE);
 
-  // Iterate over all 4-byte chunks (potentially leaving one last for after the
-  // loop). The mask is updated at the end of the loop to count the full 4-byte
-  // chunks of the next iteration.
-  for (word i = 0; i < len; i += 4) {
-    uint32 w = *reinterpret_cast<const uint32*>(address + i);
+  // Iterate over all word-sized chunks. The mask is updated at the end of the
+  // loop to count the full word-sized chunks of the next iteration.
+  for (word i = 0; i < len; i += WORD_SIZE) {
+    uword w = *reinterpret_cast<const uword*>(address + i);
     // The high bit in each byte of w should reflect whether we have an ASCII
     // character or the first byte of a multi-byte sequence.
     // w & (w << 1) captures the 11 prefix in the high bits of the first
@@ -1194,25 +1194,36 @@ PRIMITIVE(string_rune_count) {
     // ~w captures the 0 in the high bit of an ASCII (single-byte) character.
     w = (w & (w << 1)) | ~w;
     // The mask removes the other bits, leaving the high bit in each byte.  It
-    // also trims data from beyond the end of the string in the final position,
-    // which is handled first.
-    count += __builtin_popcount(w & mask);  // Count the 1's in w.
-    // After the final position we look at all bytes in the other positions.
-    mask = 0x80808080;
+    // also trims data from before the start of the string in the initial
+    // position, which is handled first.
+    w &= mask;
+#ifdef BUILD_64
+    count += Utils::popcount(w);
+#else
+    // Count the 1's in w, which can only be at the bit positions 7, 15, 23,
+    // and 31.  We could use popcount, but ESP32 does not have an instruction
+    // for that so we can do better, knowing that there are only 4 positions
+    // that can be 1.
+    w += w >> 16;
+    // Now we have a 2-bit count at bit positions 7-8 and 15-16.
+    count += ((w >> 7) + (w >> 15)) & 7;
+#endif
+    // After the first position we look at all bytes in the other positions.
+    mask = HIGH_BITS_IN_BYTES;
   }
 
-  if ((len & 3) != 0) {
+  if ((len & WORD_MASK) != 0) {
     // We counted too many bytes in the last chunk. Count the extra runes we
     // caught this way and remove it from the total.
-    uint32 last_chunk = *reinterpret_cast<const uint32*>(address + (len & ~3));
-    int last_chunk_bytes = len & 3;
+    uword last_chunk = *reinterpret_cast<const uword*>(address + (len & ~WORD_MASK));
+    int last_chunk_bytes = len & WORD_MASK;
     // Skip the the 'last_chunk_bytes' as they should be counted, but keep the
     // mask for the remaining ones.
-    uint32 end_mask = 0x80808080 << (last_chunk_bytes * 8);
-    uint32 w = last_chunk;
+    uword end_mask = HIGH_BITS_IN_BYTES << (last_chunk_bytes * BYTE_BIT_SIZE);
+    uword w = last_chunk;
     w = (w & (w << 1)) | ~w;
     // Remove them from the total count.
-    count -= __builtin_popcount(w & end_mask);
+    count -= Utils::popcount(w & end_mask);
   }
 
   return Primitive::integer(count, process);
@@ -1356,7 +1367,22 @@ PRIMITIVE(number_to_integer) {
 
 PRIMITIVE(float_sqrt) {
   ARGS(double, receiver);
-  return Primitive::allocate_double((double) sqrt(receiver), process);
+  return Primitive::allocate_double(sqrt(receiver), process);
+}
+
+PRIMITIVE(float_ceil) {
+  ARGS(double, receiver);
+  return Primitive::allocate_double(ceil(receiver), process);
+}
+
+PRIMITIVE(float_floor) {
+  ARGS(double, receiver);
+  return Primitive::allocate_double(floor(receiver), process);
+}
+
+PRIMITIVE(float_trunc) {
+  ARGS(double, receiver);
+  return Primitive::allocate_double(trunc(receiver), process);
 }
 
 static bool is_validated_string(Program* program, Object* object) {
@@ -1772,15 +1798,16 @@ PRIMITIVE(task_new) {
 
 PRIMITIVE(task_transfer) {
   ARGS(Task, to, bool, detach_stack);
-  if (!to->has_stack()) OTHER_ERROR;  // Make sure we don't transfer to a dead task.
-  process->scheduler_thread()->interpreter()->store_stack();
-  if (detach_stack) {
-    // Remove the link from the task to the stack.
-    Task* from = process->object_heap()->task();
-    from->detach_stack();
+  Task* from = process->object_heap()->task();
+  if (from != to) {
+    // Make sure we don't transfer to a dead task.
+    if (!to->has_stack()) OTHER_ERROR;
+    process->scheduler_thread()->interpreter()->store_stack();
+    // Remove the link from the task to the stack if requested.
+    if (detach_stack) from->detach_stack();
+    process->object_heap()->set_task(to);
+    process->scheduler_thread()->interpreter()->load_stack();
   }
-  process->object_heap()->set_task(to);
-  process->scheduler_thread()->interpreter()->load_stack();
   return Smi::from(42);
 }
 
@@ -1895,7 +1922,7 @@ PRIMITIVE(remove_finalizer) {
 }
 
 PRIMITIVE(gc_count) {
-  return Smi::from(process->object_heap()->gc_count());
+  return Smi::from(process->object_heap()->gc_count(NEW_SPACE_GC));
 }
 
 PRIMITIVE(create_off_heap_byte_array) {
@@ -2180,7 +2207,8 @@ class ByteArrayHeapFragmentationDumper : public HeapFragmentationDumper {
 static __attribute__((noinline)) uword get_heap_dump_size(const char* description) {
   SizeDiscoveryFragmentationDumper size_discovery(description);
   int flags = ITERATE_ALL_ALLOCATIONS | ITERATE_UNALLOCATED;
-  heap_caps_iterate_tagged_memory_areas(&size_discovery, null, HeapFragmentationDumper::log_allocation, flags);
+  int caps = OS::toit_heap_caps_flags_for_heap();
+  heap_caps_iterate_tagged_memory_areas(&size_discovery, null, HeapFragmentationDumper::log_allocation, flags, caps);
   size_discovery.write_end();
 
   return size_discovery.size();
@@ -2189,7 +2217,8 @@ static __attribute__((noinline)) uword get_heap_dump_size(const char* descriptio
 static __attribute__((noinline)) word heap_dump_to_byte_array(const char* reason, uint8* contents, uword size) {
   ByteArrayHeapFragmentationDumper dumper(reason, contents, size);
   int flags = ITERATE_ALL_ALLOCATIONS | ITERATE_UNALLOCATED;
-  heap_caps_iterate_tagged_memory_areas(&dumper, null, HeapFragmentationDumper::log_allocation, flags);
+  int caps = OS::toit_heap_caps_flags_for_heap();
+  heap_caps_iterate_tagged_memory_areas(&dumper, null, HeapFragmentationDumper::log_allocation, flags, caps);
   dumper.write_end();
   if (dumper.has_overflow()) return -1;
   return dumper.position();

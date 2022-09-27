@@ -20,21 +20,13 @@
 HOST=host
 BUILD_TYPE=Release
 
-# Use 'make ESP32_ENTRY=examples/mandelbrot.toit esp32' to compile a different
-# example for the ESP32 firmware.
-ESP32_ENTRY=examples/hello.toit
-ESP32_WIFI_SSID=
-ESP32_WIFI_PASSWORD=
-ESP32_PORT=
+# Use 'make flash ESP32_ENTRY=examples/mandelbrot.toit' to flash
+# a firmware version with an embedded application.
 ESP32_CHIP=esp32
+ESP32_PORT=
 
 # The system process is started from its own entry point.
 ESP32_SYSTEM_ENTRY=system/extensions/esp32/boot.toit
-
-# Extra entries stored in the flash must have the same uuid as the system image
-# to make sure they are produced by the same toolchain. On most platforms it
-# is possible to use 'make ... ESP32_SYSTEM_ID=$(uuidgen)' to ensure this.
-ESP32_SYSTEM_ID=00000000-0000-0000-0000-000000000000
 
 export IDF_TARGET=$(ESP32_CHIP)
 
@@ -57,8 +49,12 @@ prefix ?= /opt/toit-sdk
 .PHONY: all
 all: sdk
 
+.PHONY: debug
+debug:
+	LOCAL_CXXFLAGS="-O0" $(MAKE) BUILD_TYPE=Debug
+
 .PHONY: sdk
-sdk: tools snapshots version-file
+sdk: tools toit-tools version-file
 
 check-env:
 ifndef IGNORE_SUBMODULE
@@ -93,9 +89,9 @@ build/$(HOST)/CMakeCache.txt:
 	$(MAKE) rebuild-cmake
 
 BIN_DIR = $(CURDIR)/build/$(HOST)/sdk/bin
-TOITVM_BIN = $(BIN_DIR)/toit.run$(EXE_SUFFIX)
 TOITPKG_BIN = $(BIN_DIR)/toit.pkg$(EXE_SUFFIX)
 TOITC_BIN = $(BIN_DIR)/toit.compile$(EXE_SUFFIX)
+FIRMWARE_BIN = $(TOIT_TOOLS_DIR)/firmware$(EXE_SUFFIX)
 
 .PHONY: download-packages
 download-packages: check-env build/$(HOST)/CMakeCache.txt tools
@@ -110,9 +106,9 @@ rebuild-cmake:
 tools: check-env build/$(HOST)/CMakeCache.txt
 	(cd build/$(HOST) && ninja build_tools)
 
-.PHONY: snapshots
-snapshots: tools download-packages
-	(cd build/$(HOST) && ninja build_snapshots)
+.PHONY: toit-tools
+toit-tools: tools download-packages
+	(cd build/$(HOST) && ninja build_toit_tools)
 
 .PHONY: version-file
 version-file: build/$(HOST)/CMakeCache.txt
@@ -120,7 +116,7 @@ version-file: build/$(HOST)/CMakeCache.txt
 
 # CROSS-COMPILE
 .PHONY: all-cross
-all-cross: tools-cross snapshots-cross version-file-cross
+all-cross: tools-cross toit-tools-cross version-file-cross
 
 check-env-cross:
 ifndef CROSS_ARCH
@@ -143,33 +139,45 @@ rebuild-cross-cmake:
 tools-cross: check-env-cross tools build/$(CROSS_ARCH)/CMakeCache.txt
 	(cd build/$(CROSS_ARCH) && ninja build_tools)
 
-.PHONY: snapshots-cross
-snapshots-cross: tools download-packages build/$(CROSS_ARCH)/CMakeCache.txt
-	(cd build/$(CROSS_ARCH) && ninja build_snapshots)
+.PHONY: toit-tools-cross
+toit-tools-cross: tools download-packages build/$(CROSS_ARCH)/CMakeCache.txt
+	(cd build/$(CROSS_ARCH) && ninja build_toit_tools)
 
 .PHONY: version-file-cross
 version-file-cross: build/$(CROSS_ARCH)/CMakeCache.txt
 	(cd build/$(CROSS_ARCH) && ninja build_version_file)
 
+PI_CROSS_ARCH := raspberry_pi
 
-# ESP32 VARIANTS
-SNAPSHOT_DIR = build/$(HOST)/sdk/snapshots
+.PHONY: pi-sysroot
+pi-sysroot: build/$(PI_CROSS_ARCH)/sysroot/usr
 
-ifeq ($(DETECTED_OS), Linux)
-	NUM_CPU := $(shell nproc)
-else ifeq ($(DETECTED_OS), Darwin)
-	NUM_CPU := $(shell sysctl -n hw.ncpu)
-else
-	# Just assume two cores.
-	NUM_CPU := 2
+.PHONY: check-env-sysroot
+check-env-sysroot:
+ifeq ("", "$(shell command -v dpkg)")
+	$(error dpkg not in path.)
 endif
 
+build/$(PI_CROSS_ARCH)/sysroot/usr: check-env-sysroot
+	# This rule is brittle, since it only depends on the 'usr' folder of the sysroot.
+	# If the sysroot script fails, it might be incomplete, but another call to
+	# the rule won't do anything anymore.
+	# Generally we use this rule on the buildbot and are thus not too concerned.
+	mkdir -p build/$(PI_CROSS_ARCH)/sysroot
+	# The sysroot script doesn't like symlinks in the path. This is why we call 'realpath'.
+	third_party/rpi/sysroot.py --distro raspbian --sysroot $$(realpath build/$(PI_CROSS_ARCH)/sysroot) libc6-dev libstdc++-6-dev
 
+.PHONY: pi
+pi: pi-sysroot
+	$(MAKE) CROSS_ARCH=raspberry_pi SYSROOT="$(CURDIR)/build/$(PI_CROSS_ARCH)/sysroot" all-cross
+
+# ESP32 VARIANTS
 .PHONY: check-esp32-env
 check-esp32-env:
 ifeq ("", "$(shell command -v xtensa-esp32-elf-g++)")
 	$(error xtensa-esp32-elf-g++ not in path. Did you `source third_party/esp-idf/export.sh`?)
 endif
+
 
 .PHONY: esp32
 esp32:
@@ -177,83 +185,41 @@ esp32:
 	    $(MAKE) esp32-no-env
 
 .PHONY: esp32-no-env
-esp32-no-env: check-env check-esp32-env build/$(ESP32_CHIP)/toit.bin
+esp32-no-env: check-env check-esp32-env sdk toolchains/$(ESP32_CHIP)/sdkconfig
+	(cd toolchains/$(ESP32_CHIP) && idf.py -B ../../build/$(ESP32_CHIP) build)
 
-build/$(ESP32_CHIP)/toit.bin build/$(ESP32_CHIP)/toit.elf: build/$(ESP32_CHIP)/lib/libtoit_vm.a
-build/$(ESP32_CHIP)/toit.bin build/$(ESP32_CHIP)/toit.elf: build/$(ESP32_CHIP)/lib/libtoit_image.a
-build/$(ESP32_CHIP)/toit.bin build/$(ESP32_CHIP)/toit.elf: tools snapshots build/config.json
-	$(MAKE) -j $(NUM_CPU) -C toolchains/$(ESP32_CHIP)/
-	$(TOITVM_BIN) tools/inject_config.toit build/config.json --unique_id=$(ESP32_SYSTEM_ID) build/$(ESP32_CHIP)/toit.bin
+toolchains/$(ESP32_CHIP)/sdkconfig:
+	cp toolchains/$(ESP32_CHIP)/sdkconfig.default toolchains/$(ESP32_CHIP)/sdkconfig
 
-.PHONY: build/$(ESP32_CHIP)/lib/libtoit_vm.a  # Marked phony to force regeneration.
-build/$(ESP32_CHIP)/lib/libtoit_vm.a: build/$(ESP32_CHIP)/CMakeCache.txt build/$(ESP32_CHIP)/include/sdkconfig.h
-	(cd build/$(ESP32_CHIP) && ninja toit_vm)
-
-build/$(ESP32_CHIP)/lib/libtoit_image.a: build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s build/$(ESP32_CHIP)/CMakeCache.txt build/$(ESP32_CHIP)/include/sdkconfig.h
-	(cd build/$(ESP32_CHIP) && ninja toit_image)
-
-build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s: tools snapshots
-build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s: build/$(ESP32_CHIP)/system.snapshot
-build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s: build/$(ESP32_CHIP)/program.snapshot
-	mkdir -p build/$(ESP32_CHIP)
-	$(TOITVM_BIN) $(SNAPSHOT_DIR)/snapshot_to_image.snapshot --unique_id=$(ESP32_SYSTEM_ID) -o $@ \
-	    build/$(ESP32_CHIP)/system.snapshot \
-	    build/$(ESP32_CHIP)/program.snapshot
-
-.PHONY: build/$(ESP32_CHIP)/system.snapshot  # Marked phony to force regeneration.
-build/$(ESP32_CHIP)/system.snapshot: $(ESP32_SYSTEM_ENTRY) tools
-	$(TOITC_BIN) -w $@ $<
-
-.PHONY: build/$(ESP32_CHIP)/program.snapshot  # Marked phony to force regeneration.
-build/$(ESP32_CHIP)/program.snapshot: $(ESP32_ENTRY) tools
-	mkdir -p build/$(ESP32_CHIP)
-	$(TOITC_BIN) -w $@ $<
-
-build/$(ESP32_CHIP)/CMakeCache.txt: check-esp32-env
-	mkdir -p build/$(ESP32_CHIP)
-	touch build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s
-	(cd build/$(ESP32_CHIP) && cmake ../../ -G Ninja -DTOIT_IMAGE=build/$(ESP32_CHIP)/$(ESP32_CHIP).image.s -DTOITC=$(TOITC_BIN) -DTOITPKG=$(TOITPKG_BIN) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DCMAKE_TOOLCHAIN_FILE=../../toolchains/$(ESP32_CHIP)/$(ESP32_CHIP).cmake --no-warn-unused-cli)
-
-build/$(ESP32_CHIP)/include/sdkconfig.h:
-	mkdir -p build/$(ESP32_CHIP)
-	$(MAKE) -C toolchains/$(ESP32_CHIP) -s "$(CURDIR)"/$@
-
-.PHONY: build/config.json  # Marked phony to force regeneration.
-build/config.json:
-	echo '{"wifi": {"ssid": "$(ESP32_WIFI_SSID)", "password": "$(ESP32_WIFI_PASSWORD)"}}' > $@
+# ESP32 MENU CONFIG
+.PHONY: menuconfig
+menuconfig: check-esp32-env
+	(cd toolchains/$(ESP32_CHIP) && idf.py -B ../../build/$(ESP32_CHIP) menuconfig)
 
 
 # ESP32 VARIANTS FLASH
-.PHONY: flash
-flash: check-env-flash sdk esp32
-	python $(IDF_PATH)/components/esptool_py/esptool/esptool.py --chip $(ESP32_CHIP) --port $(ESP32_PORT) --baud 921600 \
-	    --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect \
-		0x001000 build/$(ESP32_CHIP)/bootloader/bootloader.bin \
-		0x008000 build/$(ESP32_CHIP)/partitions.bin \
-		0x010000 build/$(ESP32_CHIP)/toit.bin
-
-.PHONY: check-env-flash
-check-env-flash:
-ifndef ESP32_PORT
-	$(error ESP32_PORT is not set)
+ifdef ESP32_ENTRY
+flash: build/$(ESP32_CHIP)/flash/program.snapshot
 endif
 
+.PHONY: flash
+flash: check-env check-esp32-env sdk toolchains/$(ESP32_CHIP)/sdkconfig
+	(cd toolchains/$(ESP32_CHIP) && idf.py -B ../../build/$(ESP32_CHIP) -p $(ESP32_PORT) flash monitor)
 
 # UTILITY
 .PHONY:	clean
 clean:
 	rm -rf build/
 
+INSTALL_SRC_ARCH := $(HOST)
+
 .PHONY: install-sdk install
 install-sdk: all
-	install -D --target-directory="$(DESTDIR)$(prefix)"/bin "$(CURDIR)"/build/$(HOST)/sdk/bin/*
-	chmod 644 "$(DESTDIR)$(prefix)"/bin/*.snapshot
+	install -D --target-directory="$(DESTDIR)$(prefix)"/bin "$(CURDIR)"/build/$(INSTALL_SRC_ARCH)/sdk/bin/*
+	install -D --target-directory="$(DESTDIR)$(prefix)"/tools "$(CURDIR)"/build/$(INSTALL_SRC_ARCH)/sdk/tools/*
 	mkdir -p "$(DESTDIR)$(prefix)"/lib
 	cp -R "$(CURDIR)"/lib/* "$(DESTDIR)$(prefix)"/lib
 	find "$(DESTDIR)$(prefix)"/lib -type f -exec chmod 644 {} \;
-	mkdir -p "$(DESTDIR)$(prefix)"/snapshots
-	cp "$(CURDIR)"/build/$(HOST)/sdk/snapshots/* "$(DESTDIR)$(prefix)"/snapshots
-	find "$(DESTDIR)$(prefix)"/snapshots -type f -exec chmod 644 {} \;
 
 install: install-sdk
 
@@ -265,6 +231,7 @@ test:
 
 .PHONY: update-gold
 update-gold:
+	$(MAKE) rebuild-cmake
 	(cd build/$(HOST) && ninja update_gold)
 	(cd build/$(HOST) && ninja update_minus_s_gold)
 

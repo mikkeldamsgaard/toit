@@ -250,6 +250,7 @@ void ProgramBuilder::set_built_in_class_tags_and_sizes() {
   set_built_in_class_tag_and_size(Symbols::StringSlice_);
   set_built_in_class_tag_and_size(Symbols::List_);
   set_built_in_class_tag_and_size(Symbols::Tombstone_);
+  set_built_in_class_tag_and_size(Symbols::Map);
   set_built_in_class_tag_and_size(Symbols::Stack_, TypeTag::STACK_TAG, 0);
   set_built_in_class_tag_and_size(Symbols::Object);
   set_built_in_class_tag_and_size(Symbols::True_, TypeTag::ODDBALL_TAG);
@@ -273,7 +274,6 @@ void ProgramBuilder::set_up_skeleton_program() {
 
   // Allocate empty structures.
   _program->set_empty_array(_program_heap.allocate_array(0, _program->null_object()));
-  _program->set_snapshot_arguments(_program->empty_array());
 
   // Pre-allocate the out of memory error.
   Instance* out_of_memory_error = _program_heap.allocate_instance(_program->exception_class_id());
@@ -309,7 +309,6 @@ void ProgramBuilder::set_up_skeleton_program() {
   _program->set_read_failed(lookup_symbol("READ_FAILED"));
   _program->set_stack_overflow(lookup_symbol("STACK_OVERFLOW"));
   _program->set_unimplemented(lookup_symbol("UNIMPLEMENTED"));
-  _program->set_watchdog_interrupt(lookup_symbol("WATCHDOG_INTERRUPT"));
   _program->set_wrong_object_type(lookup_symbol("WRONG_OBJECT_TYPE"));
   _program->set_app_sdk_version(lookup_symbol(vm_git_version()));
   _program->set_app_sdk_info(lookup_symbol(vm_git_info()));
@@ -319,17 +318,6 @@ void ProgramBuilder::set_source_mapping(const char* data) {
   int length = strlen(data);
   String* string = lookup_symbol(data, length);
   _program->set_source_mapping(string);
-}
-
-void ProgramBuilder::set_snapshot_arguments(char** argv) {
-  int argc = 0;
-  while (argv[argc] != null) argc++;
-  Array* result = _program_heap.allocate_array(argc, _program->null_object());
-  for (int index = 0; index < argc; index++) {
-    String* arg = _program_heap.allocate_string(argv[index]);
-    result->at_put_no_write_barrier(index, arg);
-  }
-  _program->set_snapshot_arguments(result);
 }
 
 void ProgramBuilder::set_class_check_ids(const List<uint16>& class_check_ids) {
@@ -387,7 +375,7 @@ Object* ProgramBuilder::top() {
   return _stack.back();
 }
 
-#ifdef DEBUG
+#ifdef TOIT_DEBUG
 
 void ProgramBuilder::print() {
   ConsolePrinter printer(program());

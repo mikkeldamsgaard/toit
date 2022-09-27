@@ -862,7 +862,7 @@ abstract class Array_ extends List:
 
   /** See $super. */
   resize new_size:
-    throw "ARRAY_CANNOT_CHANGE_SIZE"
+    throw "COLLECTION_CANNOT_CHANGE_SIZE"
 
   /** See $super. */
   operator + collection -> Array_:
@@ -906,9 +906,6 @@ class SmallArray_ extends Array_:
       // The intrinsic only fails if we cannot call the block with a single
       // argument. We force this to throw by doing the same here.
       block.call null
-
-  stringify -> string:
-    return "Array of size $size"
 
   /// Creates a new array of size $new_length, copying up to $old_length elements from this array.
   resize_for_list_ old_length/int new_length/int -> Array_:
@@ -2009,7 +2006,7 @@ abstract class HashedInsertionOrderedCollection_:
     enough := 1 + old_size + (old_size >> 3)  // old_size * 1.125.
     new_index_size := max
       minimum
-      1 << (64 - (count_leading_zeros enough))
+      1 << (64 - enough.count_leading_zeros)
 
     index_spaces_left_ = (new_index_size * 0.85).to_int
     if index_spaces_left_ <= old_size: index_spaces_left_ = old_size + 1
@@ -2046,8 +2043,10 @@ abstract class HashedInsertionOrderedCollection_:
         if not backing_: backing_ = List
         not_found.call  // May not return.
         return APPEND_
+      else if size_ != 1:
+        // Map built by deserializer, has no index.
+        rebuild_ size --allow_shrink
       else:
-        assert: size_ == 1
         k := backing_[0]
         if k is not Tombstone_:
           if compare_ key k:
@@ -2230,18 +2229,18 @@ class Set extends HashedInsertionOrderedCollection_ implements Collection:
 
   /**
   Finds an object where you have the $hash code, but you haven't
-     necessarily created the object yet.
-   Returns either a matching object that was found in the set,
-     or a newly created object that was returned by the not_found
-     block and inserted into the set.
-   If a matching entry is not found, then the $initial block
-     is called.  It can create an object that will be added to
-     the set, or it can non-locally return in which case the set
-     is unchanged.  If it evaluates to null then nothing is added.
-   When a potential match is found in the set, the $compare block
-     is called with the potential match.  If it returns true then
-     the find call returns the found object.  If it returns false
-     the search continues.
+    necessarily created the object yet.
+  Returns either a matching object that was found in the set,
+    or a newly created object that was returned by the not_found
+    block and inserted into the set.
+  If a matching entry is not found, then the $initial block
+    is called.  It can create an object that will be added to
+    the set, or it can non-locally return in which case the set
+    is unchanged.  If it evaluates to null then nothing is added.
+  When a potential match is found in the set, the $compare block
+    is called with the potential match.  If it returns true then
+    the find call returns the found object.  If it returns false
+    the search continues.
   */
   get_by_hash_ hash/int [--initial] [--compare] -> any:
     if not index_:

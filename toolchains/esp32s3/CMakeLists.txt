@@ -2,5 +2,9 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.5)
 
+list(APPEND EXTRA_COMPONENT_DIRS "../idf/components")
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(import_prebuilt)
+project(toit)
+
+toit_postprocess()

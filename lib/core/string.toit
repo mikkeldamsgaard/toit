@@ -2,7 +2,7 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the lib/LICENSE file.
 
-import bitmap show blit
+import bitmap
 
 // Returns the number of bytes needed to code the char in UTF-8.
 utf_8_bytes char:
@@ -391,7 +391,7 @@ abstract class string implements Comparable:
     if amount == 1: return this
     new_size := size * amount
     array := ByteArray new_size
-    blit this array size --source_line_stride=0
+    bitmap.blit this array size --source_line_stride=0
     return array.to_string
 
   /** See $super. */
@@ -896,6 +896,71 @@ abstract class string implements Comparable:
     if not ends_with suffix: return if_absent.call this
     return copy 0 (size - suffix.size)
 
+  static TO_UPPER_TABLE_ ::= #[
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+      0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      // Add two extra lines so it can be used for to_lower too.
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+  static TO_LOWER_TABLE_ ::= TO_UPPER_TABLE_[32..]
+
+  /**
+  Returns a string where all ASCII lower case characters have
+    been replaced with their upper case equivalents.
+  Non-ASCII characters are unchanged.
+  */
+  to_ascii_upper -> string:
+    return case_helper_ TO_UPPER_TABLE_
+
+  /**
+  Returns a string where all ASCII upper case characters have
+    been replaced with their lower case equivalents.
+  Non-ASCII characters are unchanged.
+  */
+  to_ascii_lower -> string:
+    return case_helper_ TO_LOWER_TABLE_
+
+  case_helper_ table/ByteArray -> string:
+    if size == 0: return this
+    single_byte := #[0]
+    // By using "OR" as an operation and a pixel stride of 0 we can condense
+    // the search for characters with the wrong case into a single byte,
+    // avoiding an allocation of a new byte array and string in the cases
+    // where it is not needed.
+    bitmap.blit this single_byte size
+        --lookup_table=table
+        --operation=bitmap.OR
+        --destination_pixel_stride=0
+    if single_byte[0] == 0: return this
+    // Since characters with the wrong case were found we create a new string
+    // using a temporary byte array.
+    bytes := to_byte_array
+    bitmap.blit bytes bytes bytes.size --lookup_table=table --operation=bitmap.XOR
+    return bytes.to_string
+
+  /**
+  Returns true iff the string has no non-ASCII characters in it.
+  The implementation is optimized, but it takes linear time in the size of the
+    string.
+  */
+  contains_only_ascii -> bool:
+    return size == (size --runes)
+
   /**
   Splits this instance at $separator.
 
@@ -1098,6 +1163,46 @@ abstract class string implements Comparable:
       next_to += this_replacement.size
     write_to_byte_array_ bytes next_from size next_to
     return bytes.to_string
+
+  /**
+  Replaces variables in a string with their values.
+  The input is searched for variables, which are arbitrary
+    text surrounded by the delimiters, $open and $close.
+  By default it uses double braces, looking for `{{variable}}`.
+  The variable names (with whitespace trimmed) are passed to the block and the
+    return value from the block is stringified and used to replace the
+    delimited text (including delimiters).
+  If the block returns null then no change is performed at that
+    point.  In this case the returned string will contain the delimiters, the
+    contents and any white space.
+  Returns the string with the substitutions performed.
+  # Examples
+  ```
+  "foo {{bar}} baz".substitute: "-0-"              // => "foo -0- baz"
+  "foo {{16}} baz".substitute: (int.parse it) + 1  // => "foo 17 baz"
+  "x {{ y }} z".substitute: null                   // => "x {{ y }} z"
+  "f [hest] b".substitute --open="[" --close="]": "horse"  // => "f horse b"
+  "x {{b}} z".substitute: { "a": "hund", "b": "kat" }[it]  // => "x kat z"
+  ```
+  */
+  substitute [block] -> string
+      --open/string="{{"
+      --close/string="}}":
+    input := this
+    parts := []
+    while input != "":
+      index := input.index_of open
+      if index == -1:
+        parts.add input
+        break
+      parts.add input[..index]
+      substitution_size := input[index..].index_of close
+      variable := input[index + open.size..index + substitution_size]
+      input = input[index + substitution_size + close.size..]
+      replacement := block.call variable.trim
+      parts.add
+          replacement == null ? "$open$variable$close" : replacement
+    return parts.join ""
 
   /**
   Writes the raw UTF-8 bytes of the string to a new ByteArray.
