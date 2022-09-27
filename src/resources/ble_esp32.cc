@@ -29,6 +29,7 @@
 #include "../event_sources/system_esp32.h"
 
 #include <esp_bt.h>
+#include <esp_wifi.h>
 #include <esp_coexist.h>
 #include <esp_nimble_hci.h>
 #include <nimble/nimble_port.h>
@@ -300,14 +301,14 @@ uint32_t BLEResourceGroup::on_event(Resource* resource, word data, uint32_t stat
                                                 event->subscribe.cur_indicate, event->subscribe.cur_notify);
       }
       break;
-    case BLE_GAP_EVENT_DISCONNECT: {
-      auto ble_resource = resource->as<BLEResource *>();
+    case BLE_GAP_EVENT_DISCONNECT:
+      auto ble_resource = resource->as<BLEResource*>();
       if (ble_resource->kind() == BLEResource::GATT) {
         Locker locker(_mutex);
-        GATTResource *gatt = ble_resource->as<GATTResource *>();
+        GATTResource* gatt = ble_resource->as<GATTResource*>();
         ASSERT(gatt->handle() != kInvalidHandle);
         gatt->set_handle(kInvalidHandle);
-        if (static_cast<ResourceList::Element *>(gatt)->is_not_linked()) {
+        if (static_cast<ResourceList::Element*>(gatt)->is_not_linked()) {
           delete gatt;
         }
       }
@@ -315,9 +316,6 @@ uint32_t BLEResourceGroup::on_event(Resource* resource, word data, uint32_t stat
         state &= ~kBLEConnected;
         state |= kBLEDisconnected;
       }
-      break;
-    }
-    case BLE_GAP_EVENT_NOTIFY_TX:
       break;
   }
 
@@ -378,9 +376,6 @@ int BLEResourceGroup::init_server() {
             break;
           case kBLECharTypeWriteOnly:
             gatt_svr_chars[characteristic_idx].flags = BLE_GATT_CHR_F_WRITE;
-            break;
-          case kBLECharTypeWriteOnlyNoRsp:
-            gatt_svr_chars[characteristic_idx].flags = BLE_GATT_CHR_F_WRITE_NO_RSP;
             break;
           case kBLECharTypeWriteOnlyNoRsp:
             gatt_svr_chars[characteristic_idx].flags = BLE_GATT_CHR_F_WRITE_NO_RSP;
@@ -1068,13 +1063,9 @@ PRIMITIVE(get_characteristics_value) {
   Object* ret_val = convert_mbuf_to_heap_object(process, mbuf);
 
   if (ret_val != null) {
-    os_mbuf_free_chain(mbuf);
-    ByteArray::Bytes bytes((ByteArray*)ret_val);
-    ESP_LOGI("ble", "!%02x %02x %02x %02x", bytes.address()[0], bytes.address()[1], bytes.address()[2], bytes.address()[3]);
+    resource->set_mbuf_received(null);
     return ret_val;
   } else {
-    printf("put_back!\n");
-    resource->put_mbuf_back(mbuf);
     ALLOCATION_FAILED;
   }
 }
