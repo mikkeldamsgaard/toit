@@ -62,7 +62,7 @@ MODULE_IMPLEMENTATION(core, MODULE_CORE)
 PRIMITIVE(write_string_on_stdout) {
   ARGS(cstring, message, bool, add_newline);
   fprintf(stdout, "%s%s", message, add_newline ? "\n" : "");
-#ifndef TOIT_FREERTOS \
+#ifndef TOIT_FREERTOS
   fflush(stdout);
 #endif
   return _raw_message;

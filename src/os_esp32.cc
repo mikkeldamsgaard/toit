@@ -659,14 +659,6 @@ class HeapSummaryCollector {
     int type = current_page_
         ? current_page_->register_user(tag, size)
         : compute_allocation_type(tag);
-    // Disregard IRAM allocations.
-    if (reinterpret_cast<uword>(address) < SOC_IRAM_LOW) {
-      if (reinterpret_cast<uword>(address) > SOC_EXTRAM_DATA_HIGH) {
-        sizes_[type] += size;
-      }
-      counts_[type]++;
-    }
-        : compute_allocation_type(tag);
     sizes_[type] += size;
     counts_[type]++;
   }
