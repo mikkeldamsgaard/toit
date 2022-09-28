@@ -29,3 +29,6 @@ tedi_test.go
 /toolchains/esp32s3/sdkconfig
 /toolchains/esp32c3/sdkconfig
 /toolchains/esp32/sdkconfig
+**/sdkconfig.old
+build
+toolchains/**/build
