@@ -43,8 +43,8 @@ EventQueueEventSource::EventQueueEventSource()
   });
 
   // Create OS thread to handle events.
-  spawn(2*KB, 0); // Pinning to core, to discourage switching core under high load and fail an assert
-  printf("QUEUE_SET_SIZE: 1000\n");
+  spawn();
+
   ASSERT(_instance == null);
   _instance = this;
 }

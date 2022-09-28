@@ -41,7 +41,6 @@ class Port implements reader.Reader:
   /** Amount of encountered errors. */
   errors := 0
 
-  baud_rate_ := ?
   /**
   Constructs a UART port using the given $tx for transmission and $rx
     for read.
@@ -149,7 +148,6 @@ class Port implements reader.Reader:
   baud_rate -> int:
     return uart_get_baud_rate_ uart_
 
-  baud_rate: return baud_rate_
   /**
   Closes this UART port and releases all associated resources.
   */

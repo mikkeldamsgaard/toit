@@ -1,4 +1,3 @@
-sdk: ^1.6.10
 prefixes:
   ar: pkg-ar
   cli: pkg-cli
@@ -14,5 +13,5 @@ packages:
     hash: 01d8c8f76eef979ca455a760b3330f8f826fa881
   pkg-host:
     url: github.com/toitlang/pkg-host
-    version: 1.6.0
-    hash: d05b91390e76c3543a9968b042aed330210bafa4
+    version: 1.7.1
+    hash: 6b017ad10563263080bba6acde387ceebc13270b

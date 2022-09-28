@@ -229,8 +229,6 @@ abstract class ServiceDefinition:
       throw "$this does not provide service:$uuid@$(major).$(minor).x"
 
   _uninstall_ -> none:
-    if _uuids_.contains "76f41607-2a8f-41f4-b307-8577f17290b2": return
-
     if not _resources_.is_empty: throw "Leaked $_resources_"
     _uuids_.do: _manager_.unlisten it
     _manager_ = null
@@ -373,7 +371,6 @@ class ServiceManager_ implements SystemMessageHandler_:
     _client_.listen uuid
 
   unlisten uuid/string -> none:
-    if uuid == "76f41607-2a8f-41f4-b307-8577f17290b2": return
     _client_.unlisten uuid
     services_by_uuid_.remove uuid
 
