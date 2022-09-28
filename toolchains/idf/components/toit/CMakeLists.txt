@@ -75,21 +75,28 @@ function(toit_postprocess)
 
     set(BOOT ${CONFIG_TOIT_SYSTEM_SOURCE})
     if (NOT EXISTS ${BOOT})
-        set(BOOT ${TOIT_BASE_DIR}/${BOOT})
+        set(BOOT ${CMAKE_HOME_DIRECTORY}/${CONFIG_TOIT_SYSTEM_SOURCE})
         if (NOT EXISTS ${BOOT})
-            message(WARNING "Missing system toit file: ${CONFIG_TOIT_SYSTEM_SOURCE}. Build will fail")
+            set(BOOT ${TOIT_BASE_DIR}/${CONFIG_TOIT_SYSTEM_SOURCE})
+            if (NOT EXISTS ${BOOT})
+                message(WARNING "Missing system toit file: ${CONFIG_TOIT_SYSTEM_SOURCE}. Build will fail")
+            endif()
         endif()
     endif()
 
     set(BOOT_PROJECT_ROOT ${CONFIG_TOIT_SYSTEM_SOURCE_PROJECT_ROOT})
     if (NOT EXISTS ${BOOT_PROJECT_ROOT})
-        set(BOOT_PROJECT_ROOT ${TOIT_BASE_DIR}/${BOOT_PROJECT_ROOT})
-        if (EXISTS ${BOOT_PROJECT_ROOT})
-            set(BOOT_PROJECT_ROOT_ARGS "--project-root" "${BOOT_PROJECT_ROOT}")
-        else()
-            message(WARNING "Missing project root for system toit file: ${CONFIG_TOIT_SYSTEM_SOURCE_PROJECT_ROOT}. Build might fail")
+        set(BOOT_PROJECT_ROOT ${CMAKE_HOME_DIRECTORY}/${CONFIG_TOIT_SYSTEM_SOURCE_PROJECT_ROOT})
+        if (NOT EXISTS ${BOOT_PROJECT_ROOT})
+            set(BOOT_PROJECT_ROOT ${TOIT_BASE_DIR}/${CONFIG_TOIT_SYSTEM_SOURCE_PROJECT_ROOT})
         endif()
     endif()
+    if (EXISTS ${BOOT_PROJECT_ROOT})
+        set(BOOT_PROJECT_ROOT_ARGS "--project-root" "${BOOT_PROJECT_ROOT}")
+    else()
+        message(WARNING "Missing project root for system toit file: ${CONFIG_TOIT_SYSTEM_SOURCE_PROJECT_ROOT}. Build might fail")
+    endif()
+
 
     add_custom_command(
             TARGET firmware
@@ -100,14 +107,14 @@ function(toit_postprocess)
             TARGET firmware
             COMMAND rm -f firmware.envelope
             COMMAND "${FIRMWARE_BIN}"
-            "--envelope=firmware.envelope"
-            "create"
-            "--bootloader.bin=bootloader/bootloader.bin"
-            "--firmware.bin=${EXECUTABLE_NAME}.bin"
-            "--firmware.elf=${EXECUTABLE_NAME}.elf"
-            "--partitions.bin=partition_table/partition-table.bin"
-            "--partitions.csv=${CMAKE_HOME_DIRECTORY}/partitions.csv"
-            "--system.snapshot=${SYSTEM_SNAPSHOT}"
+                    "--envelope=firmware.envelope"
+                    "create"
+                    "--bootloader.bin=bootloader/bootloader.bin"
+                    "--firmware.bin=${EXECUTABLE_NAME}.bin"
+                    "--firmware.elf=${EXECUTABLE_NAME}.elf"
+                    "--partitions.bin=partition_table/partition-table.bin"
+                    "--partitions.csv=${CMAKE_HOME_DIRECTORY}/partitions.csv"
+                    "--system.snapshot=${SYSTEM_SNAPSHOT}"
             COMMAND echo envelope: created
     )
 
@@ -115,8 +122,8 @@ function(toit_postprocess)
         add_custom_command(
                 TARGET firmware
                 COMMAND "${FIRMWARE_BIN}"
-                "--envelope=firmware.envelope"
-                "property" "set" "wifi" "'{\"wifi.ssid\":\"${CONFIG_TOIT_WIFI_SSID}\",\"wifi.password\":\"${CONFIG_TOIT_WIFI_PASSWORD}\"}'"
+                        "--envelope=firmware.envelope"
+                        "property" "set" "wifi" "'{\"wifi.ssid\":\"${CONFIG_TOIT_WIFI_SSID}\",\"wifi.password\":\"${CONFIG_TOIT_WIFI_PASSWORD}\"}'"
                 COMMAND echo envelope: set wifi
         )
     endif()
@@ -137,18 +144,12 @@ function(toit_postprocess)
         endif()
 
         if (RUN_PROGRAM)
-            add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/program.snapshot
-                    COMMAND "${TOITC}" "-w" "${CMAKE_BINARY_DIR}/program.snapshot" ${ENTRY_PROJECT_ROOT_ARGS} ${CONFIG_TOIT_ENTRY_POINT}
-                    VERBATIM)
-
-            add_custom_target(program_snapshot DEPENDS ${CMAKE_BINARY_DIR}/program.snapshot)
-            add_dependencies(firmware program_snapshot)
-
             add_custom_command(
                     TARGET firmware
+                    COMMAND "${TOITC}" "-w" "${CMAKE_BINARY_DIR}/program.snapshot" ${ENTRY_PROJECT_ROOT_ARGS} ${CONFIG_TOIT_ENTRY_POINT}
                     COMMAND "${FIRMWARE_BIN}"
-                    "--envelope=firmware.envelope"
-                    "container" "install" "program" ${CMAKE_BINARY_DIR}/program.snapshot
+                            "--envelope=firmware.envelope"
+                            "container" "install" "program" ${CMAKE_BINARY_DIR}/program.snapshot
                     COMMAND echo envelope: program added
             )
         endif()
@@ -157,8 +158,8 @@ function(toit_postprocess)
     add_custom_command(
             TARGET firmware
             COMMAND "${FIRMWARE_BIN}"
-            "--envelope=firmware.envelope"
-            "extract" "--firmware.bin" "-o" "${EXECUTABLE_NAME}-firmware.bin"
+                    "--envelope=firmware.envelope"
+                    "extract" "--firmware.bin" "-o" "${EXECUTABLE_NAME}-firmware.bin"
             COMMAND echo envelope: firmware extracted
     )
 
