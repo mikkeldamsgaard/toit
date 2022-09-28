@@ -22,11 +22,11 @@ set(CMAKE_BUILD_TYPE Release)
 
 add_subdirectory(${TOIT_BASE_DIR} toit EXCLUDE_FROM_ALL)
 
-# Add the include directories from the requires components to the imported toit_vm target
+# Add the include directories from the required components to the imported toit_vm target.
 target_include_directories(toit_vm PRIVATE "$<TARGET_PROPERTY:${COMPONENT_LIB},INTERFACE_INCLUDE_DIRECTORIES>")
 
 # idf cmake does not honor the CMAKE_BUILD_TARGET, so we can not use the CMAKE_C(XX)?_FLAGS.
-# Add the required flags and defines with target_compile_* commands
+# Add the required flags and defines with target_compile_* commands.
 target_compile_definitions(toit_vm PUBLIC
         -DDEPLOY=1
         -DTOIT_DEPLOY
@@ -40,14 +40,16 @@ else()
     set(TOIT_ARCH_COMPILE_OPTIONS -fpermissive -Wno-error=all)
 endif()
 
+# The idf cmake system adds some compile flags that if not undone causes the toit compile to fail.
+# -Wextra combined with -Werror=all causes the Toit code to not compile.
 target_compile_options(toit_vm PRIVATE
         -Wno-missing-field-initializers
         -Wno-ignored-qualifiers
         -Wno-sign-compare
         -Wno-extra
         -Wno-error=format
-        -fjump-tables                   # idf (cmake) sets no-jump-tables which was not set by make
-        -ftree-switch-conversion        # idf (cmake) sets no-jump-tables which was not set by make
+        -fjump-tables                   # idf (cmake) sets no-jump-tables which was not set by make.
+        -ftree-switch-conversion        # idf (cmake) sets no-tree-switch-conversion which was not set by make.
         ${TOIT_ARCH_COMPILE_OPTIONS}
         )
 
@@ -60,6 +62,11 @@ idf_component_set_property(${COMPONENT_NAME} TOITC ${TOITC})
 idf_component_set_property(${COMPONENT_NAME} TOIT_BASE_DIR ${TOIT_BASE_DIR})
 idf_build_set_property(TOIT_COMPONENT_NAME "${COMPONENT_NAME}")
 
+# Try to resolve a file or path given in the sdkconfig.
+# The order of resolution is:
+#   1. Absolute path (or relative to this CMakeFile (unlikely))
+#   2. Path relative to main projects directory
+#   3. Path relative to the base dir of toit
 function(resolve_file out in toit_base_dir warning_text)
     set(result ${in})
     if (NOT EXISTS ${result})
@@ -140,8 +147,8 @@ function(toit_postprocess)
                 TARGET firmware
                 COMMAND "${TOITC}" "-w" "${CMAKE_BINARY_DIR}/program.snapshot" ${ENTRY_PROJECT_ROOT_ARGS} ${CONFIG_TOIT_ENTRY_POINT}
                 COMMAND "${FIRMWARE_BIN}"
-                "--envelope=firmware.envelope"
-                "container" "install" "program" ${CMAKE_BINARY_DIR}/program.snapshot
+                        "--envelope=firmware.envelope"
+                        "container" "install" "program" ${CMAKE_BINARY_DIR}/program.snapshot
                 COMMAND echo envelope: program added
         )
     endif()
