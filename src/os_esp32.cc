@@ -57,7 +57,7 @@ namespace toit {
 // capable.  We will set this to the most useful value when we have detected
 // which types of RAM are available.
 bool OS::_use_spiram_for_heap = true;
-bool OS::_use_spiram_for_metadata = false;
+bool OS::_use_spiram_for_metadata = true;
 #ifdef CONFIG_TOIT_USE_SPIRAM
 static const int EXTERNAL_CAPS = MALLOC_CAP_SPIRAM;
 #else
@@ -658,14 +658,6 @@ class HeapSummaryCollector {
     }
     int type = current_page_
         ? current_page_->register_user(tag, size)
-        : compute_allocation_type(tag);
-    // Disregard IRAM allocations.
-    if (reinterpret_cast<uword>(address) < SOC_IRAM_LOW) {
-      if (reinterpret_cast<uword>(address) > SOC_EXTRAM_DATA_HIGH) {
-        sizes_[type] += size;
-      }
-      counts_[type]++;
-    }
         : compute_allocation_type(tag);
     sizes_[type] += size;
     counts_[type]++;

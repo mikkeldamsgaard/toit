@@ -13,14 +13,16 @@
 // The license can be found in the file `LICENSE` in the top level
 // directory of this repository.
 
+#include "top.h"
+
+#ifdef TOIT_FREERTOS
+
 #include "objects.h"
 #include "os.h"
 #include "sha256.h"
-#include "top.h"
 #include "utils.h"
 #include "uuid.h"
 
-#ifdef TOIT_FREERTOS
 
 #include "rtc_memory_esp32.h"
 #include "esp_attr.h"

@@ -4,7 +4,7 @@ set(TOIT_BASE_DIR ${COMPONENT_PATH}/../../../..)
 
 # Register without sources, this will create an INTERFACE lib and we can then specify link options later
 idf_component_register(INCLUDE_DIRS "${TOIT_BASE_DIR}/src"
-        REQUIRES "esp_adc_cal" "mbedtls" "bt" "app_update" "ulp")
+        REQUIRES "esp_adc_cal" "mbedtls" "bt" "app_update" "ulp" "fatfs")
 
 cmake_policy(SET CMP0079 NEW)
 
@@ -27,7 +27,7 @@ target_include_directories(toit_vm PRIVATE "$<TARGET_PROPERTY:${COMPONENT_LIB},I
 
 # idf cmake does not honor the CMAKE_BUILD_TARGET, so we can not use the CMAKE_C(XX)?_FLAGS.
 # Add the required flags and defines with target_compile_* commands
-target_compile_definitions(toit_vm PRIVATE
+target_compile_definitions(toit_vm PUBLIC
         -DDEPLOY=1
         -DTOIT_DEPLOY
         -DESP32
