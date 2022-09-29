@@ -375,7 +375,7 @@ extract_binary envelope/Envelope -> ByteArray:
   properties := properties_entry ? (json.decode properties_entry) : null
   system := entries.get AR_ENTRY_SYSTEM_SNAPSHOT
   if system:
-    wifi := properties.get "wifi"
+    wifi := properties ? properties.get "wifi" : null
     assets_encoded := wifi ? (assets.encode { "wifi": ubjson.encode wifi }) : null
     containers.add (ContainerEntry "system" system --assets=assets_encoded)
 
