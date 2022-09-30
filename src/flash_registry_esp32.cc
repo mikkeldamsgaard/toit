@@ -68,9 +68,7 @@ static esp_err_t ensure_erased(const char* memory, unsigned offset, int size) {
         dirty_end += FLASH_PAGE_SIZE;
       }
       // Erase dirty range: [cursor, dirty_end).
-      printf("[flash reg] erase 0x%x size %d\n", cursor, dirty_end-cursor);
       esp_err_t result = esp_partition_erase_range(allocations_partition, cursor, dirty_end - cursor);
-      printf("[flash reg] erased: %d\n",result);
       if (result == ESP_OK) {
         is_dirty = true;
       } else {

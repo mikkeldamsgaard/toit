@@ -19,7 +19,6 @@
 
 #include "driver/rmt.h"
 #include "driver/gpio.h"
-#include "soc/soc_caps.h"
 
 #include "../objects_inline.h"
 #include "../primitive.h"
@@ -96,10 +95,7 @@ PRIMITIVE(channel_new) {
   if (channel_num == -1 && memory_block_count == 1) {
     channel = rmt_channels.any();
   } else if (memory_block_count == 1) {
-    channel = static_cast
-
-
-        <rmt_channel_t>(channel_num);
+    channel = static_cast<rmt_channel_t>(channel_num);
     if (!rmt_channels.take(channel)) channel = kInvalidChannel;
   } else {
     // Try to find adjacent channels that are still free.
