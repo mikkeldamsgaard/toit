@@ -139,8 +139,8 @@ function(toit_postprocess)
             TARGET firmware
             POST_BUILD
             COMMAND "${FIRMWARE_BIN}"
-            "--envelope=firmware.envelope"
-            "property" "set" "name" "${EXECUTABLE_NAME}"
+                    "--envelope=firmware.envelope"
+                    "property" "set" "name" "${EXECUTABLE_NAME}"
             COMMAND echo envelope: set name
     )
 
