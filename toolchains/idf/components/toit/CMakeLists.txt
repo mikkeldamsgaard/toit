@@ -135,6 +135,15 @@ function(toit_postprocess)
         )
     endif()
 
+    add_custom_command(
+            TARGET firmware
+            POST_BUILD
+            COMMAND "${FIRMWARE_BIN}"
+            "--envelope=firmware.envelope"
+            "property" "set" "name" "${EXECUTABLE_NAME}"
+            COMMAND echo envelope: set name
+    )
+
     if (CONFIG_TOIT_ENTRY_POINT)
         resolve_file(RUN_PROGRAM ${CONFIG_TOIT_ENTRY_POINT} ${TOIT_BASE_DIR} "program toit")
         resolve_file(RUN_PROGRAM_PROJECT_ROOT ${CONFIG_TOIT_ENTRY_POINT_PROJECT_ROOT} ${TOIT_BASE_DIR} "")
