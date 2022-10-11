@@ -34,7 +34,7 @@ EventQueueEventSource::EventQueueEventSource()
     , Thread("EVQ")
     , _stop(xSemaphoreCreateBinary())
     , _gpio_queue(xQueueCreate(32, sizeof(word)))
-    , _queue_set(xQueueCreateSet(1000)) {
+    , _queue_set(xQueueCreateSet(3000)) {
   xQueueAddToSet(_stop, _queue_set);
   xQueueAddToSet(_gpio_queue, _queue_set);
 

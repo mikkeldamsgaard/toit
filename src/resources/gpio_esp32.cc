@@ -128,8 +128,8 @@ QueueHandle_t IRAM_ATTR GPIOResourceGroup::queue;
 
 void IRAM_ATTR GPIOResourceGroup::isr_handler(void* arg) {
   word id = unvoid_cast<word>(arg);
-  xQueueSendToBackFromISR(queue, &id, null);
-  return;
+  if (!xQueueIsQueueFullFromISR(queue))
+    xQueueSendToBackFromISR(queue, &id, null);
 }
 
 bool GPIOResource::check_gpio(word pin) {
