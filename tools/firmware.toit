@@ -21,7 +21,8 @@ import reader
 import uuid
 
 import encoding.json
-import encoding.ubjson
+import encoding.tison
+
 import system.assets
 
 import ar
@@ -165,6 +166,20 @@ container_cmd -> cli.Command:
           --run=:: container_install it
 
   cmd.add
+      cli.Command "extract"
+          --options=[
+            cli.OptionString "output"
+                --short_help="Set the output file name."
+                --short_name="o"
+                --required,
+            cli.OptionEnum "part" ["image", "assets"]
+                --short_help="Pick the part of the container to extract."
+                --required
+          ]
+          --rest=[option_name]
+          --run=:: container_extract it
+
+  cmd.add
       cli.Command "uninstall"
           --options=[ option_output ]
           --rest=[ option_name ]
@@ -195,16 +210,20 @@ decode_image data/ByteArray -> ImageHeader:
   decoded := out.bytes
   return ImageHeader decoded
 
-container_install parsed/cli.Parsed -> none:
+get_container_name parsed/cli.Parsed -> string:
   name := parsed["name"]
-  image_path := parsed["image"]
-  assets_path := parsed["assets"]
   if name.starts_with "\$":
     print "cannot install container with a name that starts with \$ or +"
     exit 1
   if name.size > 14:
     print "cannot install container with a name longer than 14 characters"
     exit 1
+  return name
+
+container_install parsed/cli.Parsed -> none:
+  name := get_container_name parsed
+  image_path := parsed["image"]
+  assets_path := parsed["assets"]
   image_data := read_file image_path
   assets_data := read_assets assets_path
   if not is_snapshot_bundle image_data:
@@ -228,8 +247,20 @@ container_install parsed/cli.Parsed -> none:
     if assets_data: envelope.entries["+$name"] = assets_data
     else: envelope.entries.remove "+$name"
 
+container_extract parsed/cli.Parsed -> none:
+  input_path := parsed[OPTION_ENVELOPE]
+  name := get_container_name parsed
+  entries := (Envelope.load input_path).entries
+  part := parsed["part"]
+  key := (part == "assets") ? "+$name" : name
+  if not entries.contains key:
+    print "container '$name' has no $part"
+    exit 1
+  entry := entries[key]
+  write_file parsed["output"]: it.write entry
+
 container_uninstall parsed/cli.Parsed -> none:
-  name := parsed["name"]
+  name := get_container_name parsed
   update_envelope parsed: | envelope/Envelope |
     envelope.entries.remove name
     envelope.entries.remove "+$name"
@@ -370,13 +401,15 @@ extract parsed/cli.Parsed -> none:
 extract_binary envelope/Envelope -> ByteArray:
   containers ::= []
   entries := envelope.entries
+  properties := entries.get AR_ENTRY_PROPERTIES
+      --if_present=: json.decode it
+      --if_absent=: {:}
 
-  properties_entry := entries.get AR_ENTRY_PROPERTIES
-  properties := properties_entry ? (json.decode properties_entry) : {:}
   system := entries.get AR_ENTRY_SYSTEM_SNAPSHOT
   if system:
-    wifi := properties ? properties.get "wifi" : null
-    assets_encoded := wifi ? (assets.encode { "wifi": ubjson.encode wifi }) : null
+    assets_encoded := properties.get "wifi"
+        --if_present=: assets.encode { "wifi": tison.encode it }
+        --if_absent=: null
     containers.add (ContainerEntry "system" system --assets=assets_encoded)
 
   entries.do: | name/string content/ByteArray |
@@ -391,7 +424,6 @@ extract_binary envelope/Envelope -> ByteArray:
   system_uuid/uuid.Uuid? := null
   if properties.contains "uuid":
     catch: system_uuid = uuid.parse properties["uuid"]
-    properties.remove "uuid"
   if not system_uuid:
     system_uuid = uuid.uuid5 "$random" "$Time.now".to_byte_array
 

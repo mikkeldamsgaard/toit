@@ -174,7 +174,10 @@ PRIMITIVE(create) {
     // TODO(anders): Divide buf_len (and grow buf-count) if buffer_size is > 1024.
     .dma_buf_len = buffer_size / (bits_per_sample / 8),
     .use_apll = use_apll,
-    .fixed_mclk = fixed_mclk
+    .tx_desc_auto_clear = false,
+    .fixed_mclk = fixed_mclk,
+    .mclk_multiple = I2S_MCLK_MULTIPLE_DEFAULT,
+    .bits_per_chan = I2S_BITS_PER_CHAN_DEFAULT,
   };
 
   struct {
@@ -184,7 +187,9 @@ PRIMITIVE(create) {
     esp_err_t err;
   } args {
     .port = port,
-    .config = config
+    .config = config,
+    .queue = QueueHandle_t{},
+    .err = esp_err_t{},
   };
   SystemEventSource::instance()->run([&]() -> void {
     args.err = i2s_driver_install(args.port, &args.config, 32, &args.queue);
@@ -195,7 +200,7 @@ PRIMITIVE(create) {
   }
 
   i2s_pin_config_t pin_config = {
-      .mck_io_num = mclk_pin >=0 ? mclk_pin: I2S_PIN_NO_CHANGE,
+    .mck_io_num = mclk_pin >=0 ? mclk_pin: I2S_PIN_NO_CHANGE,
     .bck_io_num = sck_pin >= 0 ? sck_pin : I2S_PIN_NO_CHANGE,
     .ws_io_num = ws_pin >= 0 ? ws_pin : I2S_PIN_NO_CHANGE,
     .data_out_num = tx_pin >= 0 ? tx_pin : I2S_PIN_NO_CHANGE,
@@ -249,9 +254,8 @@ PRIMITIVE(write) {
 PRIMITIVE(read) {
   ARGS(I2SResource, i2s);
 
-  Error* error = null;
-  ByteArray* data = process->allocate_byte_array(i2s->alignment(), &error, /*force_external*/ true);
-  if (data == null) return error;
+  ByteArray* data = process->allocate_byte_array(i2s->alignment(), /*force_external*/ true);
+  if (data == null) ALLOCATION_FAILED;
 
   ByteArray::Bytes rx(data);
   size_t read = 0;

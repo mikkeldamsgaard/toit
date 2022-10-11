@@ -174,6 +174,7 @@ PRIMITIVE(create) {
     .stop_bits = UART_STOP_BITS_1,
     .flow_ctrl = (uart_hw_flowcontrol_t)flow_ctrl,
     .rx_flow_ctrl_thresh = 122,
+    .source_clk = UART_SCLK_APB,
   };
 
 
@@ -343,9 +344,8 @@ PRIMITIVE(read) {
     return Primitive::os_error(err, process);
   }
 
-  Error* error = null;
-  ByteArray* data = process->allocate_byte_array(available, &error, /*force_external*/ available != 0);
-  if (data == null) return error;
+  ByteArray* data = process->allocate_byte_array(available, /*force_external*/ available != 0);
+  if (data == null) ALLOCATION_FAILED;
 
   if (available == 0) return data;
 

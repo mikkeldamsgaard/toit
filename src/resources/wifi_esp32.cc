@@ -14,10 +14,8 @@
 // directory of this repository.
 
 #include "../top.h"
-#include "../primitive.h"
-#include "../process.h"
 
-#if defined(TOIT_FREERTOS)
+#ifdef TOIT_FREERTOS
 
 #include <esp_wifi.h>
 #include <nvs_flash.h>
@@ -27,11 +25,12 @@
 #include "../rtc_memory_esp32.h"
 #include "../objects.h"
 #include "../objects_inline.h"
+#include "../process.h"
+#include "../primitive.h"
 #include "../resource_pool.h"
 #include "../vm.h"
 
 #include "../event_sources/system_esp32.h"
-
 
 namespace toit {
 #if defined(CONFIG_TOIT_ENABLE_WIFI)
@@ -70,7 +69,7 @@ class WifiResourceGroup : public ResourceGroup {
     // Configure the WiFi to _start_ the channel scan from the last connected channel.
     // If there has been no previous connection, then the channel is 0 which causes a normal scan.
     uint8 channel = RtcMemory::wifi_channel();
-    if (!(0 <= channel && channel <= 13)) {
+    if (channel > 13) {
       channel = 0;
       RtcMemory::set_wifi_channel(0);
     }
@@ -338,7 +337,6 @@ PRIMITIVE(init) {
 }
 
 PRIMITIVE(close) {
-  printf("wifi_close\n");
   ARGS(WifiResourceGroup, group);
 
   group->tear_down();
@@ -347,8 +345,6 @@ PRIMITIVE(close) {
 }
 
 PRIMITIVE(connect) {
-  printf("wifi_connect\n");
-
   ARGS(WifiResourceGroup, group, cstring, ssid, cstring, password);
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + WIFI_MALLOC_TAG);
 
@@ -401,8 +397,6 @@ PRIMITIVE(establish) {
 }
 
 PRIMITIVE(setup_ip) {
-  printf("setup_ip\n");
-
   ARGS(WifiResourceGroup, group);
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + WIFI_MALLOC_TAG);
 
@@ -418,7 +412,6 @@ PRIMITIVE(setup_ip) {
 }
 
 PRIMITIVE(disconnect) {
-  printf("setup_disconnct\n");
   ARGS(WifiResourceGroup, group, WifiEvents, wifi);
 
   group->unregister_resource(wifi);
@@ -427,7 +420,6 @@ PRIMITIVE(disconnect) {
 }
 
 PRIMITIVE(disconnect_reason) {
-  printf("setup_disconnct_reason\n");
   ARGS(WifiEvents, wifi);
   switch (wifi->disconnect_reason()) {
     case WIFI_REASON_ASSOC_EXPIRE:
@@ -467,6 +459,7 @@ PRIMITIVE(get_rssi) {
   if (!group->rssi(&rssi)) return process->program()->null_object();
   return Smi::from(rssi);
 }
-#endif
+#endif // CONFIG_TOIT_ENABLE_WIFI
 } // namespace toit
+
 #endif // TOIT_FREERTOS
