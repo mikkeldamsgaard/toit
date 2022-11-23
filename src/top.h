@@ -21,7 +21,7 @@
 #include <stdint.h>
 #include <cstring>
 #include <new>
-
+//#define TOIT_GC_LOGGING 1
 #ifdef TOIT_DEBUG
 #include <typeinfo>
 #endif

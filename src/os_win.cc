@@ -188,6 +188,9 @@ void Thread::_boot() {
   entry();
 }
 
+void Thread::set_priority(int priority) {
+}
+
 bool Thread::spawn(int stack_size, int core, int tag) {
   int result = pthread_create(reinterpret_cast<pthread_t*>(&_handle), null, &thread_start, void_cast(this));
   if (result != 0) {

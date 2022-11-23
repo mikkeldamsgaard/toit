@@ -195,6 +195,9 @@ bool Thread::spawn(int stack_size, int core, int tag) {
   return true;
 }
 
+void Thread::set_priority(int priority) {
+}
+
 // Run on current thread.
 void Thread::run() {
   ASSERT(_handle == null);

@@ -87,6 +87,8 @@ class Thread {
 
   void join();
 
+  void set_priority(int priority);
+
  protected:
   virtual void entry() = 0;
 

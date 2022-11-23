@@ -310,6 +310,15 @@ void Thread::_boot() {
   vTaskDelete(null);
 }
 
+void Thread::set_priority(int priority) {
+  auto thread = reinterpret_cast<ThreadData*>(_handle);
+  int prio = priority*configMAX_PRIORITIES/255;
+  printf("priority = %d, prio = %d\n", priority, prio);
+  if (prio <= 0) prio = 1;
+  if (prio >= configMAX_PRIORITIES) prio = configMAX_PRIORITIES -1;
+  vTaskPrioritySet(thread->handle,prio);
+}
+
 bool Thread::spawn(int stack_size, int core, int tag) {
   if (tag == -1) tag = THREAD_SPAWN_MALLOC_TAG;
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + tag);

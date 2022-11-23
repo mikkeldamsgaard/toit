@@ -400,8 +400,13 @@ void Scheduler::run(SchedulerThread* scheduler_thread) {
       // Notify potential other thread that there are more processes ready.
       OS::signal(_has_processes);
     }
-
+    //int64_t start = esp_timer_get_time();
     run_process(locker, process, scheduler_thread);
+//    int64_t stop = esp_timer_get_time();
+//    if (stop - start > 25000) {
+//      printf("[Excessive Usage] (%lld) %d %lld\n", start/1000, process->priority(), (stop-start));
+//    }
+
   }
 
   // Notify potential other thread, that no more processes are left.
@@ -624,7 +629,9 @@ void Scheduler::run_process(Locker& locker, Process* process, SchedulerThread* s
     process->set_idle_since_gc(false);
     if (process->signals() == 0) {
       Unlocker unlock(locker);
+      //scheduler_thread->set_priority(process->priority());
       result = interpreter->run();
+      //scheduler_thread->set_priority(0);
     }
     preemption_method_header_bcp = interpreter->preemption_method_header_bcp();
     interpreter->deactivate();

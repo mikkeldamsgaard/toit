@@ -52,7 +52,7 @@ class __Monitor__:
 
     // Unlock the monitor before the entering the loop to make the
     // state the same as it will be just after having been notified.
-    if not identical self owner_: throw "must own monitor to await"
+    //if not identical self owner_: throw "must own monitor to await"
     owner_ = null
 
     try:

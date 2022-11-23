@@ -1460,18 +1460,30 @@ A container specialized for bytes.
 A byte array can only contain (non-null) integers in the range 0-255.
 */
 class ByteArray_ extends ByteArrayBase_:
-
+  static lr := Time.monotonic_us
+  static internal := 0
+  static external := 0
   /**
   Creates a new byte array of the given $size.
 
   All elements are initialized to 0.
   */
   constructor size/int --filler/int=0:
+    //report true
     #primitive.core.byte_array_new
 
   constructor.external_ size/int:
+    //report false
     #primitive.core.byte_array_new_external
 
+  static report internal/bool:
+    if internal: ByteArray_.internal++
+    else: ByteArray_.external++
+    if Time.monotonic_us-lr > 2000:
+      print_ "[ba] i: $ByteArray_.internal, e: $ByteArray_.external"
+      ByteArray_.internal = 0
+      ByteArray_.external = 0
+      lr = Time.monotonic_us
   /**
   The number of bytes in this instance.
   */

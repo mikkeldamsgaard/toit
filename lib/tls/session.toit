@@ -154,9 +154,15 @@ class Session:
     ensure_handshaken_
     if not tls_: throw "TLS_SOCKET_NOT_CONNECTED"
     while true:
+      u := Time.monotonic_us
+      want_more/bool? := null
       res := tls_read_ tls_
+      want_more = (res == TOIT_TLS_WANT_READ_)
+      //print_ "session.tls_read_: $(Time.monotonic_us-u), want_more=$want_more"
+
       if res == TOIT_TLS_WANT_READ_:
         if not read_more_: return null
+        yield
       else:
         return res
 
