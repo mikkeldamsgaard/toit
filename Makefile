@@ -218,7 +218,6 @@ ifeq ("", "$(shell command -v xtensa-esp32-elf-g++)")
 	$(error xtensa-esp32-elf-g++ not in path. Did you `source third_party/esp-idf/export.sh`?)
 endif
 
-
 .PHONY: esp32
 esp32:
 	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then source '$(IDF_PATH)/export.sh'; fi; \

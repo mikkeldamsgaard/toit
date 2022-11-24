@@ -85,9 +85,7 @@ class Socket implements tcp.Socket:
     return session_.session_state
 
   read -> ByteArray?:
-    u := Time.monotonic_us
-    try: return session_.read
-    finally: //print_ "read: $(Time.monotonic_us-u)"
+    return session_.read
 
   write data from/int=0 to/int=data.size -> int:
     return session_.write data from to

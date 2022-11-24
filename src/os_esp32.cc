@@ -304,18 +304,8 @@ void Thread::_boot() {
   vTaskDelete(null);
 }
 
-void Thread::set_priority(int priority) {
-  auto thread = reinterpret_cast<ThreadData*>(_handle);
-  int prio = priority*configMAX_PRIORITIES/255;
-  printf("priority = %d, prio = %d\n", priority, prio);
-  if (prio <= 0) prio = 1;
-  if (prio >= configMAX_PRIORITIES) prio = configMAX_PRIORITIES -1;
-  vTaskPrioritySet(thread->handle,prio);
-}
-
-bool Thread::spawn(int stack_size, int core, int tag) {
-  if (tag == -1) tag = THREAD_SPAWN_MALLOC_TAG;
-  HeapTagScope scope(ITERATE_CUSTOM_TAGS + tag);
+bool Thread::spawn(int stack_size, int core) {
+  HeapTagScope scope(ITERATE_CUSTOM_TAGS + THREAD_SPAWN_MALLOC_TAG);
   ThreadData* thread = _new ThreadData();
   if (thread == null) return false;
   thread->terminated = xSemaphoreCreateBinary();
@@ -457,7 +447,7 @@ OS::HeapMemoryRange OS::get_heap_memory_range() {
   // In this case use hard coded ranges for internal RAM.
   HeapMemoryRange range;
 #ifdef CONFIG_IDF_TARGET_ESP32S3
-  range.address = reinterpret_cast<void*>(0x3fc90000);
+  range.address = reinterpret_cast<void*>(0x3ffa0000);
   range.size = 512 * KB;
 #else
   //                           DRAM range            IRAM range
@@ -607,10 +597,6 @@ class HeapSummaryPage {
       case THREAD_SPAWN_MALLOC_TAG: return "thread/spawn";
       case NULL_MALLOC_TAG: return "untagged";
       case WIFI_MALLOC_TAG: return "wifi";
-      case CUSTOM_THREAD_MALLOC_TAG: return "custom thread";
-      case CUSTOM_OTHER_MALLOC_TAG: return "custom other";
-      case CODEC_MALLOC_TAG: return "codec";
-      case I2S_MALLOC_TAG: return "i2s";
     }
     return "unknown";
   }

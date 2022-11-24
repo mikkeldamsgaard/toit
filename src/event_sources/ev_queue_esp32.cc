@@ -69,11 +69,11 @@ void EventQueueEventSource::entry() {
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + EVENT_SOURCE_MALLOC_TAG);
 
   while (true) {
-    QueueSetMemberHandle_t handle;
     { Unlocker unlock(locker);
       // Wait for any queue/semaphore to wake up.
       xQueueSelectFromSet(queue_set_, portMAX_DELAY);
     }
+
     // First test if we should shut down.
     if (xSemaphoreTake(stop_, 0)) {
       return;
@@ -99,8 +99,6 @@ void EventQueueEventSource::entry() {
         dispatch(locker, r, data);
       }
     }
-
-
   }
 }
 

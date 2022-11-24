@@ -43,11 +43,11 @@ ResourcePool<i2s_port_t, kInvalidPort> i2s_ports(
 #endif
 );
 
-class I2SResourceGroup : public ResourceGroup {
+class I2sResourceGroup : public ResourceGroup {
  public:
-  TAG(I2SResourceGroup);
+  TAG(I2sResourceGroup);
 
-  I2SResourceGroup(Process* process, EventSource* event_source)
+  I2sResourceGroup(Process* process, EventSource* event_source)
       : ResourceGroup(process, event_source) {}
 
   uint32_t on_event(Resource* r, word data, uint32_t state) {
@@ -69,15 +69,15 @@ class I2SResourceGroup : public ResourceGroup {
   }
 };
 
-class I2SResource: public EventQueueResource {
+class I2sResource: public EventQueueResource {
  public:
-  TAG(I2SResource);
-  I2SResource(I2SResourceGroup* group, i2s_port_t port, int alignment, QueueHandle_t queue)
+  TAG(I2sResource);
+  I2sResource(I2sResourceGroup* group, i2s_port_t port, int alignment, QueueHandle_t queue)
     : EventQueueResource(group, queue)
     , port_(port)
     , alignment_(alignment) {}
 
-  ~I2SResource() override {
+  ~I2sResource() override {
     SystemEventSource::instance()->run([&]() -> void {
       FATAL_IF_NOT_ESP_OK(i2s_driver_uninstall(port_));
     });
@@ -94,7 +94,7 @@ class I2SResource: public EventQueueResource {
   int alignment_;
 };
 
-bool I2SResource::receive_event(word* data) {
+bool I2sResource::receive_event(word* data) {
   i2s_event_t event;
   bool more = xQueueReceive(queue(), &event, 0);
   if (more) *data = event.type;
@@ -109,7 +109,7 @@ PRIMITIVE(init) {
     ALLOCATION_FAILED;
   }
 
-  I2SResourceGroup* i2s = _new I2SResourceGroup(process, EventQueueEventSource::instance());
+  I2sResourceGroup* i2s = _new I2sResourceGroup(process, EventQueueEventSource::instance());
   if (!i2s) {
     MALLOC_FAILED;
   }
@@ -120,15 +120,10 @@ PRIMITIVE(init) {
 
 
 PRIMITIVE(create) {
-  ARGS(I2SResourceGroup, group, int, sck_pin, int, ws_pin, int, tx_pin,
+  ARGS(I2sResourceGroup, group, int, sck_pin, int, ws_pin, int, tx_pin,
        int, rx_pin, int, mclk_pin,
        uint32, sample_rate, int, bits_per_sample, int, buffer_size,
        bool, is_master, int, mclk_multiplier, bool, use_apll);
-
-#ifdef CONFIG_IDF_TARGET_ESP32S3
-  if (mclk_pin != -1) INVALID_ARGUMENT;
-  if (use_apll) INVALID_ARGUMENT;
-#endif
 
   int fixed_mclk = 0;
   if (mclk_pin != -1) {
@@ -164,7 +159,7 @@ PRIMITIVE(create) {
 
   i2s_config_t config = {
     .mode = static_cast<i2s_mode_t>(mode),
-    .sample_rate = static_cast<uint32_t>(sample_rate),
+    .sample_rate = sample_rate,
     .bits_per_sample = static_cast<i2s_bits_per_sample_t>(bits_per_sample),
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
@@ -223,7 +218,7 @@ PRIMITIVE(create) {
     return Primitive::os_error(err, process);
   }
 
-  I2SResource* i2s = _new I2SResource(group, port, buffer_size, args.queue);
+  I2sResource* i2s = _new I2sResource(group, port, buffer_size, args.queue);
   if (!i2s) {
     SystemEventSource::instance()->run([&]() -> void {
       i2s_driver_uninstall(port);
@@ -239,14 +234,14 @@ PRIMITIVE(create) {
 }
 
 PRIMITIVE(close) {
-  ARGS(I2SResourceGroup, group, I2SResource, i2s);
+  ARGS(I2sResourceGroup, group, I2sResource, i2s);
   group->unregister_resource(i2s);
   i2s_proxy->clear_external_address();
   return process->program()->null_object();
 }
 
 PRIMITIVE(write) {
-  ARGS(I2SResource, i2s, Blob, buffer);
+  ARGS(I2sResource, i2s, Blob, buffer);
 
   if (buffer.length() % i2s->alignment() != 0) INVALID_ARGUMENT;
 
@@ -260,7 +255,7 @@ PRIMITIVE(write) {
 }
 
 PRIMITIVE(read) {
-  ARGS(I2SResource, i2s);
+  ARGS(I2sResource, i2s);
 
   ByteArray* data = process->allocate_byte_array(i2s->alignment(), /*force_external*/ true);
   if (data == null) ALLOCATION_FAILED;
@@ -277,7 +272,7 @@ PRIMITIVE(read) {
 }
 
 PRIMITIVE(read_to_buffer) {
-  ARGS(I2SResource, i2s, MutableBlob, buffer);
+  ARGS(I2sResource, i2s, MutableBlob, buffer);
 
   if (buffer.length() % i2s->alignment() != 0) INVALID_ARGUMENT;
 

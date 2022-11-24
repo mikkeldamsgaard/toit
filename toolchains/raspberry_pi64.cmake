@@ -13,11 +13,6 @@
 # The license can be found in the file `LICENSE` in the top level
 # directory of this repository.
 
-<<<<<<<< HEAD:toolchains/esp32s3/Makefile
-PROJECT_NAME := toit
-BUILD_DIR_BASE := $(abspath ../../build/esp32s3)
-include $(IDF_PATH)/make/project.mk
-========
 set(ARM_TARGET "arm-linux-gnueabihf")
 
 set(ARM_CPU_FLAGS "-mcpu=cortex-a53 -mfloat-abi=hard -mfpu=neon-fp-armv8")
@@ -27,4 +22,3 @@ set(CMAKE_C_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -no-pie")
 set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -no-pie")
 
 include("${CMAKE_CURRENT_LIST_DIR}/arm64.cmake")
->>>>>>>> upstream/master:toolchains/raspberry_pi64.cmake
