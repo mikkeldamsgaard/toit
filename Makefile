@@ -15,6 +15,7 @@
 
 .ONESHELL: # Run all lines of targets in one shell
 .SHELLFLAGS += -e
+SHELL=bash
 
 # General options.
 HOST=host
@@ -69,14 +70,14 @@ ifndef IGNORE_GIT_TAGS
 		exit 1; \
 	fi
 endif
-ifeq ("$(wildcard $(IDF_PATH)/components/mbedtls/mbedtls/LICENSE)","")
-ifeq ("$(IDF_PATH)", "$(CURDIR)/third_party/esp-idf")
+ifeq ('$(wildcard $(IDF_PATH)/components/mbedtls/mbedtls/LICENSE)',"")
+ifeq ('$(IDF_PATH)', '$(CURDIR)/third_party/esp-idf')
 	$(error mbedtls sources are missing. Did you `git submodule update --init --recursive`?)
 else
 	$(error Invalid IDF_PATH. Missing mbedtls sources.)
 endif
 endif
-ifneq ("$(IDF_PATH)", "$(CURDIR)/third_party/esp-idf")
+ifneq ('$(IDF_PATH)', '$(CURDIR)/third_party/esp-idf')
 	$(info -- Not using Toitware ESP-IDF fork.)
 endif
 
@@ -113,6 +114,19 @@ toit-tools: tools download-packages
 .PHONY: version-file
 version-file: build/$(HOST)/CMakeCache.txt
 	(cd build/$(HOST) && ninja build_version_file)
+
+.PHONY: esptool
+esptool: check-env
+	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then source '$(IDF_PATH)/export.sh'; fi; \
+	    $(MAKE) esptool-no-env
+
+.PHONY: esptool-no-env
+esptool-no-env:
+	pip install -U 'pyinstaller>=4.8'
+	pyinstaller --onefile --distpath build/$(HOST)/sdk/tools \
+			--workpath build/$(HOST)/esptool \
+			--specpath build/$(HOST)/esptool \
+			'$(IDF_PATH)/components/esptool_py/esptool/esptool.py'
 
 # CROSS-COMPILE
 .PHONY: all-cross
@@ -171,6 +185,32 @@ build/$(PI_CROSS_ARCH)/sysroot/usr: check-env-sysroot
 pi: pi-sysroot
 	$(MAKE) CROSS_ARCH=raspberry_pi SYSROOT="$(CURDIR)/build/$(PI_CROSS_ARCH)/sysroot" all-cross
 
+ARM_LINUX_GNUEABI_CROSS_ARCH := arm-linux-gnueabi
+
+.PHONY: arm-linux-gnueabi-sysroot
+arm-linux-gnueabi-sysroot: build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/usr
+
+ARM_LINUX_GNUEABI_SYSROOT_URL=https://releases.linaro.org/components/toolchain/binaries/latest-7/arm-linux-gnueabi/sysroot-glibc-linaro-2.25-2019.12-arm-linux-gnueabi.tar.xz
+ARM_LINUX_GNUEABI_GCC_TOOLCHAIN_URL=https://releases.linaro.org/components/toolchain/binaries/latest-7/arm-linux-gnueabi/gcc-linaro-7.5.0-2019.12-i686_arm-linux-gnueabi.tar.xz
+
+build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/sysroot.tar.xz:
+	mkdir -p build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot
+	wget --output-document build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/sysroot.tar.xz $(ARM_LINUX_GNUEABI_SYSROOT_URL)
+
+build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/gcc-toolchain.tar.xz:
+	mkdir -p build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot
+	wget --output-document build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/gcc-toolchain.tar.xz $(ARM_LINUX_GNUEABI_GCC_TOOLCHAIN_URL)
+
+build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/usr: build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/sysroot.tar.xz
+build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/usr: build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/gcc-toolchain.tar.xz
+	tar x --strip-components=1 -f build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/sysroot.tar.xz -C build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot
+	tar x --strip-components=1 -f build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot/gcc-toolchain.tar.xz -C build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot
+	touch $@
+
+.PHONY: arm-linux-gnueabi
+arm-linux-gnueabi: arm-linux-gnueabi-sysroot
+	$(MAKE) CROSS_ARCH=$(ARM_LINUX_GNUEABI_CROSS_ARCH) SYSROOT="$(CURDIR)/build/$(ARM_LINUX_GNUEABI_CROSS_ARCH)/sysroot" all-cross
+
 # ESP32 VARIANTS
 .PHONY: check-esp32-env
 check-esp32-env:
@@ -181,31 +221,31 @@ endif
 
 .PHONY: esp32
 esp32:
-	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then source $(IDF_PATH)/export.sh; fi; \
+	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then source '$(IDF_PATH)/export.sh'; fi; \
 	    $(MAKE) esp32-no-env
 
 .PHONY: esp32-no-env
 esp32-no-env: check-env check-esp32-env sdk
-	IDF_TARGET=$(ESP32_CHIP) idf.py -C toolchains/$(ESP32_CHIP) -B build/$(ESP32_CHIP) -p "$(ESP32_PORT)" build
+	cmake -E env IDF_TARGET=$(ESP32_CHIP) IDF_CCACHE_ENABLE=1 idf.py -C toolchains/$(ESP32_CHIP) -B build/$(ESP32_CHIP) -p "$(ESP32_PORT)" build
 
 # ESP32 MENU CONFIG
 .PHONY: menuconfig
 menuconfig:
-	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then source $(IDF_PATH)/export.sh; fi; \
+	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then source '$(IDF_PATH)/export.sh'; fi; \
 	    $(MAKE) menuconfig-no-env
 
 .PHONY: menuconfig-no-env
 menuconfig-no-env: check-env check-esp32-env
-	IDF_TARGET=$(ESP32_CHIP) idf.py -C toolchains/$(ESP32_CHIP) -B build/$(ESP32_CHIP) -p "$(ESP32_PORT)" menuconfig
+	cmake -E env IDF_TARGET=$(ESP32_CHIP) idf.py -C toolchains/$(ESP32_CHIP) -B build/$(ESP32_CHIP) -p "$(ESP32_PORT)" menuconfig
 
 .PHONY: flash
 flash:
-	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then source $(IDF_PATH)/export.sh; fi; \
+	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then 'source $(IDF_PATH)/export.sh'; fi; \
 	    $(MAKE) flash-no-env
 
 .PHONY: flash-no-env
 flash-no-env: esp32-no-env
-	IDF_TARGET=$(ESP32_CHIP) idf.py -C toolchains/$(ESP32_CHIP) -B build/$(ESP32_CHIP) -p "$(ESP32_PORT)" flash monitor
+	cmake -E env IDF_TARGET=$(ESP32_CHIP) idf.py -C toolchains/$(ESP32_CHIP) -B build/$(ESP32_CHIP) -p "$(ESP32_PORT)" flash monitor
 
 # UTILITY
 .PHONY:	clean

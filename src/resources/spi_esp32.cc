@@ -40,6 +40,9 @@ ResourcePool<spi_host_device_t, kInvalidHostDevice> spi_host_devices(
 #ifdef CONFIG_IDF_TARGET_ESP32S3
   SPI2_HOST,
   SPI3_HOST
+#elif CONFIG_IDF_TARGET_ESP32S2
+  SPI2_HOST,
+  SPI3_HOST
 #elif CONFIG_IDF_TARGET_ESP32C3
   SPI3_HOST
 #else
@@ -48,18 +51,18 @@ ResourcePool<spi_host_device_t, kInvalidHostDevice> spi_host_devices(
 #endif
 );
 
-SPIResourceGroup::SPIResourceGroup(Process* process, EventSource* event_source,
-                                   spi_host_device_t host_device, int dma_chan)
+SPIResourceGroup::SPIResourceGroup(Process* process, EventSource* event_source, spi_host_device_t host_device,
+                                   int dma_channel)
     : ResourceGroup(process, event_source)
-    , _host_device(host_device)
-    , _dma_chan(dma_chan) { }
+    , host_device_(host_device)
+    , dma_channel_(dma_channel) {}
 
 SPIResourceGroup::~SPIResourceGroup() {
   SystemEventSource::instance()->run([&]() -> void {
-    FATAL_IF_NOT_ESP_OK(spi_bus_free(_host_device));
+    FATAL_IF_NOT_ESP_OK(spi_bus_free(host_device_));
   });
-  spi_host_devices.put(_host_device);
-  dma_channels.put(_dma_chan);
+  spi_host_devices.put(host_device_);
+  dma_channels.put(dma_channel_);
 }
 
 MODULE_IMPLEMENTATION(spi, MODULE_SPI);
@@ -87,6 +90,8 @@ PRIMITIVE(init) {
 #ifdef CONFIG_IDF_TARGET_ESP32C3
     host_device = SPI3_HOST;
 #elif CONFIG_IDF_TARGET_ESP32S3
+    host_device = SPI3_HOST;
+#elif CONFIG_IDF_TARGET_ESP32S2
     host_device = SPI3_HOST;
 #else
     host_device = VSPI_HOST;

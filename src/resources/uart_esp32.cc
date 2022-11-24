@@ -28,7 +28,7 @@
 #include "../event_sources/system_esp32.h"
 
 
-#ifdef CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S2
     #define UART_PORT UART_NUM_1
 #else
     #define UART_PORT UART_NUM_2
@@ -43,7 +43,7 @@ const int kErrorState = 1 << 1;
 
 ResourcePool<uart_port_t, kInvalidUARTPort> uart_ports(
   // UART_NUM_0 is reserved serial communication (stdout).
-#ifndef CONFIG_IDF_TARGET_ESP32C3
+#if !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32S2)
   UART_NUM_2,
 #endif
   UART_NUM_1
@@ -55,14 +55,14 @@ public:
 
   UARTResource(ResourceGroup* group, uart_port_t port, QueueHandle_t queue)
       : EventQueueResource(group, queue)
-      , _port(port) {}
+      , port_(port) {}
 
-  uart_port_t port() const { return _port; }
+  uart_port_t port() const { return port_; }
 
   bool receive_event(word* data) override;
 
 private:
-  uart_port_t _port;
+  uart_port_t port_;
 };
 
 bool UARTResource::receive_event(word* data) {
@@ -76,7 +76,7 @@ class UARTResourceGroup : public ResourceGroup {
  public:
   TAG(UARTResourceGroup);
   UARTResourceGroup(Process* process, EventSource* event_source)
-    : ResourceGroup(process, event_source){ }
+    : ResourceGroup(process, event_source){}
 
   virtual void on_unregister_resource(Resource* r) {
     UARTResource* uart_res = static_cast<UARTResource*>(r);
@@ -290,9 +290,9 @@ PRIMITIVE(write) {
 
   int wrote;
   if (break_length > 0) {
-    wrote = uart_write_bytes_with_break_non_blocking(uart->port(), reinterpret_cast<const char*>(tx), to - from, break_length);
+    wrote = uart_write_bytes_with_break(uart->port(), reinterpret_cast<const char*>(tx), to - from, break_length);
   } else {
-    wrote = uart_write_bytes_non_blocking(uart->port(), reinterpret_cast<const char*>(tx), to - from);
+    wrote = uart_write_bytes(uart->port(), reinterpret_cast<const char*>(tx), to - from);
   }
   if (wrote == -1) {
     OUT_OF_RANGE;

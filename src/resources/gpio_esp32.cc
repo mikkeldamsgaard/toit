@@ -55,6 +55,36 @@ ResourcePool<int, -1> gpio_pins(
 #endif
 );
 
+#ifdef CONFIG_IDF_TARGET_ESP32
+static bool is_restricted_pin(int num) {
+  // The flash pins should generally not be used.
+  return 6 <= num && num <= 11;
+}
+#elif CONFIG_IDF_TARGET_ESP32C3
+static bool is_restricted_pin(int num) {
+  // The flash pins should generally not be used.
+  return 12 <= num && num <= 17;
+}
+#elif CONFIG_IDF_TARGET_ESP32S3
+static bool is_restricted_pin(int num) {
+  // Pins 26-32 are used for flash, and pins 33-37 are used for
+  // octal flash or octal PSRAM.
+  return 26 <= num && num <= 37;
+}
+#elif CONFIG_IDF_TARGET_ESP32S2
+static bool is_restricted_pin(int num) {
+  // Pins 26-32 are used for flash and PSRAM.
+  return 26 <= num && num <= 32;
+}
+#else
+#error Unknown ESP32 target architecture
+
+static bool is_restricted_pin(int num) {
+  return false;
+}
+
+#endif
+
 class GPIOResource : public EventQueueResource {
  public:
   TAG(GPIOResource);
@@ -62,14 +92,14 @@ class GPIOResource : public EventQueueResource {
   GPIOResource(ResourceGroup* group, int pin)
       // GPIO resources share a queue, which is always on the event source, so pass null.
       : EventQueueResource(group, null)
-      , _pin(pin) {}
+      , pin_(pin) {}
 
-  int pin() const { return _pin; }
+  int pin() const { return pin_; }
 
   bool check_gpio(word pin) override;
 
  private:
-  int _pin;
+  int pin_;
 };
 
 class GPIOResourceGroup : public ResourceGroup {
@@ -133,7 +163,7 @@ void IRAM_ATTR GPIOResourceGroup::isr_handler(void* arg) {
 }
 
 bool GPIOResource::check_gpio(word pin) {
-  if (pin != _pin) return false;
+  if (pin != pin_) return false;
   return true;
 }
 
@@ -151,10 +181,12 @@ PRIMITIVE(init) {
 }
 
 PRIMITIVE(use) {
-  ARGS(GPIOResourceGroup, resource_group, int, num);
+  ARGS(GPIOResourceGroup, resource_group, int, num, bool, allow_restricted);
 
   ByteArray* proxy = process->object_heap()->allocate_proxy();
   if (proxy == null) ALLOCATION_FAILED;
+
+  if (!allow_restricted && is_restricted_pin(num)) INVALID_ARGUMENT;
 
   if (!gpio_pins.take(num)) ALREADY_IN_USE;
 

@@ -34,7 +34,7 @@ namespace toit {
   fn(AesCbcContext)                     \
   fn(SslSession)                        \
   fn(Sha1)                              \
-  fn(Sha256)                            \
+  fn(Sha)                               \
   fn(Siphash)                           \
   fn(Adler32)                           \
   fn(ZlibRle)                           \
@@ -46,11 +46,19 @@ namespace toit {
   fn(PcntUnitResource)                  \
   fn(PWMResource)                       \
   fn(RMTResource)                       \
-  fn(GAPResource)                       \
-  fn(GATTResource)                      \
-  fn(BLEServerServiceResource)          \
-  fn(BLEServerCharacteristicResource)   \
+  fn(BLECentralManagerResource)         \
+  fn(BLEPeripheralManagerResource)      \
+  fn(BLERemoteDeviceResource)           \
+  fn(BLEServiceResource)                \
+  fn(BLECharacteristicResource)         \
+  fn(BLEDescriptorResource)             \
   fn(Directory)                         \
+  fn(UDPSocketResource)                 \
+  fn(TCPSocketResource)                 \
+  fn(TCPServerSocketResource)           \
+  fn(SubprocessResource)                \
+  fn(PipeResource)                      \
+  fn(GcmContext)                        \
 
 #define TLS_CLASSES_DO(fn)              \
   fn(MbedTLSSocket)                     \
@@ -84,6 +92,7 @@ namespace toit {
   fn(PcntUnitResourceGroup)             \
   fn(PWMResourceGroup)                  \
   fn(TouchResourceGroup)                \
+  fn(ESPNowResourceGroup)               \
 
 #define MAKE_ENUM(name)                 \
   name##Tag,                            \

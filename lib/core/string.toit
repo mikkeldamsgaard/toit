@@ -48,6 +48,15 @@ is_unicode_whitespace_ c/int -> bool:
       c == 0x3000 or
       c == 0xFEFF
 
+/**
+A Unicode text object.
+Strings are sequences of Unicode code points, stored in UTF-8 format.
+This is a fully fledged class, not a 'primitive type'.
+A string can only contain valid UTF-8 byte sequences.  To store arbitrary
+  byte sequences or other encodings like ISO 8859, use $ByteArray.
+Strings are immutable objects.
+See more on strings at https://docs.toit.io/language/strings.
+*/
 abstract class string implements Comparable:
   static MIN_SLICE_SIZE_ ::= 16
 
@@ -158,13 +167,20 @@ abstract class string implements Comparable:
     syntax: `str[from..to]`. Since both arguments are optional (as they have
     default values), it is valid to omit `from` or `to`.
 
+  Positions that would create an invalid UTF-8 sequence are rejected with
+    an exception.
+
   # Examples
   ```
-  str := "hello world"
+  str := "Hello, world!"
   hello := str[..5]
-  world := str[6..]
-  print hello  // => "hello"
-  print world  // => "world"
+  world := str[7..]
+  comma := str[5..6]
+  print hello  // => "Hello"
+  print comma  // => ","
+  print world  // => "world!"
+  amelie := "Amélie"
+  amelie[2..3]  // Throws an exception.
   ```
   */
   // TODO(florian): make this an overloaded function. Currently we can't because
@@ -285,17 +301,19 @@ abstract class string implements Comparable:
 
   The normal way of using this functionality is through the
     string interpolation syntax - see
-    https://docs.toit.io/language/strings/#string-interpolation
+    https://docs.toit.io/language/strings/#string-interpolation.
 
   The $format description is very similar to `printf`.
 
   Extensions relative to printf:
   - `^` for centering.
+  - 'b' for binary.
 
   Missing relative to printf: No support for `%g` or `%p`.
 
   Like in printf the hexadecimal and octal format specifiers,
-    %x and %o will treat all values as unsigned.  See also
+    %x and %o will treat all values as unsigned.  This also
+    applies to the binary format specifier, %b.  See also
     $int.stringify.
 
   Format Description:
@@ -304,7 +322,7 @@ abstract class string implements Comparable:
   alignment = flags<digits>
   flags = '-' | '^' | '>'   (> is default, can't be used in the syntax)
   precision = .<digits>
-  type 'd' | 'f' | 's' | 'o' | 'x' | 'c'
+  type 'd' | 'f' | 's' | 'o' | 'x' | 'c' | 'b'
   ```
   */
   static format format/string object -> string:
@@ -344,6 +362,7 @@ abstract class string implements Comparable:
       d := object.to_float
       meat = precision ? (d.stringify precision) : d.stringify
     else if type == 'd': meat = object.to_int.stringify
+    else if type == 'b': meat = printf_style_int_stringify_ object.to_int 2
     else if type == 'o': meat = printf_style_int_stringify_ object.to_int 8
     else if type == 'x': meat = printf_style_int_stringify_ object.to_int 16
     else if type == 'X':
@@ -1290,6 +1309,6 @@ class StringSlice_ extends string:
   compute_hash_ -> int:
     #primitive.core.blob_hash_code
 
-// Unsigned base 8 and base 16 stringification.
+// Unsigned base 2, 8, and 16 stringification.
 printf_style_int_stringify_ value/int base/int -> string:
   #primitive.core.printf_style_int64_to_string

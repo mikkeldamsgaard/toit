@@ -31,15 +31,15 @@ Object* X509ResourceGroup::parse(Process* process, const uint8_t* encoded, size_
   ByteArray* proxy = process->object_heap()->allocate_proxy();
   if (proxy == null) ALLOCATION_FAILED;
 
-  uint8 checksum[Sha256::HASH_LENGTH];
-  { Sha256 sha256(null);
+  uint8 checksum[Sha::HASH_LENGTH_256];
+  { Sha sha256(null, 256);
     sha256.add(encoded, encoded_size);
     sha256.get(&checksum[0]);
   }
 
   for (Resource* it : resources()) {
     X509Certificate* other = static_cast<X509Certificate*>(it);
-    if (memcmp(checksum, other->checksum(), Sha256::HASH_LENGTH) == 0) {
+    if (memcmp(checksum, other->checksum(), Sha::HASH_LENGTH_256) == 0) {
       other->reference();
       proxy->set_external_address(other);
       return proxy;
@@ -55,7 +55,7 @@ Object* X509ResourceGroup::parse(Process* process, const uint8_t* encoded, size_
     return tls_error(null, process, ret);
   }
 
-  memcpy(cert->checksum(), checksum, Sha256::HASH_LENGTH);
+  memcpy(cert->checksum(), checksum, Sha::HASH_LENGTH_256);
   register_resource(cert);
 
   proxy->set_external_address(cert);
@@ -63,7 +63,7 @@ Object* X509ResourceGroup::parse(Process* process, const uint8_t* encoded, size_
 }
 
 Object* X509Certificate::common_name_or_error(Process* process) {
-  const mbedtls_asn1_named_data* item = &_cert.subject;
+  const mbedtls_asn1_named_data* item = &cert_.subject;
   while (item) {
     // Find OID that corresponds to the CN (CommonName) field of the subject.
     if (item->oid.len == 3 && strncmp("\x55\x04\x03", char_cast(item->oid.p), 3) == 0) {
@@ -101,7 +101,9 @@ PRIMITIVE(parse) {
     String* str = String::cast(input);
     data = reinterpret_cast<const uint8_t*>(str->as_cstr());
     length = str->length() + 1;
+    // Toit strings are stored null terminated.
     ASSERT(data[length - 1] == '\0');
+    if (strlen(char_cast(data)) != length - 1) INVALID_ARGUMENT;  // String with nulls in it.
   } else if (input->byte_content(process->program(), &blob, STRINGS_OR_BYTE_ARRAYS)) {
     // If we're passed a byte array or a string slice, we hope that
     // it ends with a zero character. Otherwise parsing will fail.

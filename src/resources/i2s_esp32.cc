@@ -38,7 +38,7 @@ const int kErrorState = 1 << 2;
 
 ResourcePool<i2s_port_t, kInvalidPort> i2s_ports(
     I2S_NUM_0
-#ifndef CONFIG_IDF_TARGET_ESP32C3
+#if !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32S2)
     , I2S_NUM_1
 #endif
 );
@@ -74,24 +74,24 @@ class I2SResource: public EventQueueResource {
   TAG(I2SResource);
   I2SResource(I2SResourceGroup* group, i2s_port_t port, int alignment, QueueHandle_t queue)
     : EventQueueResource(group, queue)
-    , _port(port)
-    , _alignment(alignment) { }
+    , port_(port)
+    , alignment_(alignment) {}
 
   ~I2SResource() override {
     SystemEventSource::instance()->run([&]() -> void {
-      FATAL_IF_NOT_ESP_OK(i2s_driver_uninstall(_port));
+      FATAL_IF_NOT_ESP_OK(i2s_driver_uninstall(port_));
     });
-    i2s_ports.put(_port);
+    i2s_ports.put(port_);
   }
 
-  i2s_port_t port() const { return _port; }
-  int alignment() const { return _alignment; }
+  i2s_port_t port() const { return port_; }
+  int alignment() const { return alignment_; }
 
   bool receive_event(word* data) override;
 
  private:
-  i2s_port_t _port;
-  int _alignment;
+  i2s_port_t port_;
+  int alignment_;
 };
 
 bool I2SResource::receive_event(word* data) {
@@ -178,6 +178,14 @@ PRIMITIVE(create) {
     .fixed_mclk = fixed_mclk,
     .mclk_multiple = I2S_MCLK_MULTIPLE_DEFAULT,
     .bits_per_chan = I2S_BITS_PER_CHAN_DEFAULT,
+#if SOC_I2S_SUPPORTS_TDM
+    .chan_mask = static_cast<i2s_channel_t>(0),
+    .total_chan = 0,
+    .left_align = false,
+    .big_edin = false,
+    .bit_order_msb = false,
+    .skip_msk = false,
+#endif // SOC_I2S_SUPPORTS_TDM
   };
 
   struct {

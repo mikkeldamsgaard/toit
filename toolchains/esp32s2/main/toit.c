@@ -1,4 +1,4 @@
-// Copyright (C) 2019 Toitware ApS.
+// Copyright (C) 2022 Toitware ApS.
 //
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
@@ -13,26 +13,10 @@
 // The license can be found in the file `LICENSE` in the top level
 // directory of this repository.
 
-#include "sha256.h"
+// Toit ESP32 top level, derived from ESP-IDF Hello World example.
 
-namespace toit {
+extern void toit_start();
 
-Sha256::Sha256(SimpleResourceGroup* group) : SimpleResource(group) {
-  mbedtls_sha256_init(&_context);
-  static const int SHA256 = 0;
-  mbedtls_sha256_starts_ret(&_context, SHA256);
-}
-
-Sha256::~Sha256() {
-  mbedtls_sha256_free(&_context);
-}
-
-void Sha256::add(const uint8* contents, intptr_t extra) {
-  mbedtls_sha256_update_ret(&_context, contents, extra);
-}
-
-void Sha256::get(uint8_t* hash) {
-  mbedtls_sha256_finish_ret(&_context, hash);
-}
-
+void app_main() {
+  toit_start();
 }

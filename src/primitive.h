@@ -67,6 +67,8 @@ namespace toit {
   M(x509,    MODULE_X509)                    \
   M(flash_kv, MODULE_FLASH_KV)               \
   M(debug,   MODULE_DEBUG)                   \
+  M(espnow,  MODULE_ESPNOW)                  \
+  M(bignum,  MODULE_BIGNUM)                  \
 
 #define MODULE_CORE(PRIMITIVE)               \
   PRIMITIVE(write_string_on_stdout, 2)       \
@@ -103,8 +105,6 @@ namespace toit {
   PRIMITIVE(blob_equals, 2)                  \
   PRIMITIVE(string_compare, 2)               \
   PRIMITIVE(string_rune_count, 1)            \
-  PRIMITIVE(object_equals, 2)                \
-  PRIMITIVE(identical, 2)                    \
   PRIMITIVE(random, 0)                       \
   PRIMITIVE(random_seed, 1)                  \
   PRIMITIVE(add_entropy, 1)                  \
@@ -180,10 +180,8 @@ namespace toit {
   PRIMITIVE(task_has_messages, 0)            \
   PRIMITIVE(task_receive_message, 0)         \
   PRIMITIVE(concat_strings, 1)               \
-  PRIMITIVE(task_current, 0)                 \
   PRIMITIVE(task_new, 1)                     \
   PRIMITIVE(task_transfer, 2)                \
-  PRIMITIVE(task_stack, 1)                   \
   PRIMITIVE(gc_count, 0)                     \
   PRIMITIVE(byte_array_is_raw_bytes, 1)      \
   PRIMITIVE(byte_array_length, 1)            \
@@ -195,6 +193,7 @@ namespace toit {
   PRIMITIVE(byte_array_is_valid_string_content, 3) \
   PRIMITIVE(byte_array_convert_to_string, 3) \
   PRIMITIVE(blob_index_of, 4)                \
+  PRIMITIVE(crc, 6)                          \
   PRIMITIVE(string_from_rune, 1)             \
   PRIMITIVE(string_write_to_byte_array, 5)   \
   PRIMITIVE(create_off_heap_byte_array, 1)   \
@@ -241,6 +240,10 @@ namespace toit {
   PRIMITIVE(get_env, 1)                      \
   PRIMITIVE(literal_index, 1)                \
   PRIMITIVE(word_size, 0)                    \
+  PRIMITIVE(firmware_map, 1)                 \
+  PRIMITIVE(firmware_unmap, 1)               \
+  PRIMITIVE(firmware_mapping_at, 2)          \
+  PRIMITIVE(firmware_mapping_copy, 5)        \
 
 #define MODULE_TIMER(PRIMITIVE)              \
   PRIMITIVE(init, 0)                         \
@@ -316,31 +319,38 @@ namespace toit {
 
 #define MODULE_BLE(PRIMITIVE)                \
   PRIMITIVE(init, 1)                         \
-  PRIMITIVE(gap, 1)                          \
+  PRIMITIVE(create_peripheral_manager, 1)    \
+  PRIMITIVE(create_central_manager, 1)       \
   PRIMITIVE(close, 1)                        \
+  PRIMITIVE(release_resource, 1)             \
   PRIMITIVE(scan_start, 2)                   \
   PRIMITIVE(scan_next, 1)                    \
   PRIMITIVE(scan_stop, 1)                    \
-  PRIMITIVE(advertise_start, 4)              \
-  PRIMITIVE(advertise_config, 4)             \
+  PRIMITIVE(connect, 2)                      \
+  PRIMITIVE(disconnect, 1)                   \
+  PRIMITIVE(discover_services, 2)            \
+  PRIMITIVE(discover_services_result, 1)     \
+  PRIMITIVE(discover_characteristics, 2)     \
+  PRIMITIVE(discover_characteristics_result, 1) \
+  PRIMITIVE(discover_descriptors, 1)         \
+  PRIMITIVE(discover_descriptors_result, 1)  \
+  PRIMITIVE(request_read, 1)                 \
+  PRIMITIVE(get_value, 1)                    \
+  PRIMITIVE(write_value, 3)                  \
+  PRIMITIVE(set_characteristic_notify, 2)    \
+  PRIMITIVE(advertise_start, 7)              \
   PRIMITIVE(advertise_stop, 1)               \
-  PRIMITIVE(connect, 3)                      \
-  PRIMITIVE(get_gatt, 1)                     \
-  PRIMITIVE(request_result, 1)               \
-  PRIMITIVE(request_data, 1)                 \
-  PRIMITIVE(send_data, 3)                    \
-  PRIMITIVE(request_service, 2)              \
-  PRIMITIVE(request_characteristic, 3)       \
-  PRIMITIVE(request_attribute, 2)            \
-  PRIMITIVE(server_configuration_init, 0)    \
-  PRIMITIVE(server_configuration_dispose, 1) \
-  PRIMITIVE(add_server_service, 2)           \
-  PRIMITIVE(add_server_characteristic, 4)    \
-  PRIMITIVE(set_characteristics_value, 2)    \
-  PRIMITIVE(notify_characteristics_value, 2) \
-  PRIMITIVE(get_characteristics_value, 1)    \
+  PRIMITIVE(add_service, 2)                  \
+  PRIMITIVE(add_characteristic, 5)           \
+  PRIMITIVE(add_descriptor, 5)               \
+  PRIMITIVE(deploy_service, 1)               \
+  PRIMITIVE(set_value, 2)                    \
+  PRIMITIVE(get_subscribed_clients, 1)       \
+  PRIMITIVE(notify_characteristics_value, 3) \
   PRIMITIVE(get_att_mtu, 1)                  \
   PRIMITIVE(set_preferred_mtu, 1)            \
+  PRIMITIVE(get_error, 1)                    \
+  PRIMITIVE(gc, 1)                           \
 
 #define MODULE_DHCP(PRIMITIVE)               \
   PRIMITIVE(wait_for_lwip_dhcp_on_linux, 0)  \
@@ -439,9 +449,9 @@ namespace toit {
   PRIMITIVE(sha1_start, 1)                   \
   PRIMITIVE(sha1_add, 4)                     \
   PRIMITIVE(sha1_get, 1)                     \
-  PRIMITIVE(sha256_start, 1)                 \
-  PRIMITIVE(sha256_add, 4)                   \
-  PRIMITIVE(sha256_get, 1)                   \
+  PRIMITIVE(sha_start, 2)                    \
+  PRIMITIVE(sha_add, 4)                      \
+  PRIMITIVE(sha_get, 1)                      \
   PRIMITIVE(siphash_start, 5)                \
   PRIMITIVE(siphash_add, 4)                  \
   PRIMITIVE(siphash_get, 1)                  \
@@ -450,6 +460,13 @@ namespace toit {
   PRIMITIVE(aes_ecb_crypt, 3)                \
   PRIMITIVE(aes_cbc_close, 1)                \
   PRIMITIVE(aes_ecb_close, 1)                \
+  PRIMITIVE(gcm_init, 4)                     \
+  PRIMITIVE(gcm_close, 1)                    \
+  PRIMITIVE(gcm_start_message, 3)            \
+  PRIMITIVE(gcm_add, 3)                      \
+  PRIMITIVE(gcm_get_tag_size, 1)             \
+  PRIMITIVE(gcm_finish, 1)                   \
+  PRIMITIVE(gcm_verify, 3)                   \
 
 #define MODULE_ENCODING(PRIMITIVE)           \
   PRIMITIVE(base64_encode, 2)                \
@@ -506,7 +523,7 @@ namespace toit {
 
 #define MODULE_GPIO(PRIMITIVE)               \
   PRIMITIVE(init, 0)                         \
-  PRIMITIVE(use, 2)                          \
+  PRIMITIVE(use, 3)                          \
   PRIMITIVE(unuse, 2)                        \
   PRIMITIVE(config, 6)                       \
   PRIMITIVE(get, 1)                          \
@@ -551,6 +568,7 @@ namespace toit {
   PRIMITIVE(kill, 2)                         \
   PRIMITIVE(bundled_images, 0)               \
   PRIMITIVE(assets, 0)                       \
+  PRIMITIVE(config, 0)                       \
 
 #define MODULE_FLASH_REGISTRY(PRIMITIVE)     \
   PRIMITIVE(next, 1)                         \
@@ -648,6 +666,17 @@ namespace toit {
 #define MODULE_DEBUG(PRIMITIVE)              \
   PRIMITIVE(object_histogram, 2)             \
 
+#define MODULE_ESPNOW(PRIMITIVE)             \
+  PRIMITIVE(init, 2)                         \
+  PRIMITIVE(send, 3)                         \
+  PRIMITIVE(receive, 1)                      \
+  PRIMITIVE(add_peer, 3)                     \
+  PRIMITIVE(deinit, 1)                       \
+
+#define MODULE_BIGNUM(PRIMITIVE)             \
+  PRIMITIVE(binary_operator, 5)              \
+  PRIMITIVE(exp_mod, 6)                      \
+
 // ----------------------------------------------------------------------------
 
 #define MODULE_IMPLEMENTATION_PRIMITIVE(name, arity)                \
@@ -659,7 +688,7 @@ namespace toit {
   static const PrimitiveEntry name##_primitive_table[] = {          \
     entries(MODULE_IMPLEMENTATION_ENTRY)                            \
   };                                                                \
-  const PrimitiveEntry* name##_primitives = name##_primitive_table;
+  const PrimitiveEntry* name##primitives_ = name##_primitive_table;
 
 // ----------------------------------------------------------------------------
 
@@ -904,6 +933,7 @@ namespace toit {
 #define _A_T_RpcResourceGroup(N, name)    MAKE_UNPACKING_MACRO(RpcResourceGroup, N, name)
 #define _A_T_RMTResourceGroup(N, name)    MAKE_UNPACKING_MACRO(RMTResourceGroup, N, name)
 #define _A_T_PcntUnitResourceGroup(N, name) MAKE_UNPACKING_MACRO(PcntUnitResourceGroup, N, name)
+#define _A_T_ESPNowResourceGroup(N, name) MAKE_UNPACKING_MACRO(ESPNowResourceGroup, N, name)
 
 #define _A_T_Resource(N, name)            MAKE_UNPACKING_MACRO(Resource, N, name)
 #define _A_T_Directory(N, name)           MAKE_UNPACKING_MACRO(Directory, N, name)
@@ -927,25 +957,36 @@ namespace toit {
 #define _A_T_AesCbcContext(N, name)       MAKE_UNPACKING_MACRO(AesCbcContext, N, name)
 #define _A_T_Sha1(N, name)                MAKE_UNPACKING_MACRO(Sha1, N, name)
 #define _A_T_Siphash(N, name)             MAKE_UNPACKING_MACRO(Siphash, N, name)
-#define _A_T_Sha256(N, name)              MAKE_UNPACKING_MACRO(Sha256, N, name)
+#define _A_T_Sha(N, name)                 MAKE_UNPACKING_MACRO(Sha, N, name)
 #define _A_T_Adler32(N, name)             MAKE_UNPACKING_MACRO(Adler32, N, name)
 #define _A_T_ZlibRle(N, name)             MAKE_UNPACKING_MACRO(ZlibRle, N, name)
 #define _A_T_GPIOResource(N, name)        MAKE_UNPACKING_MACRO(GPIOResource, N, name)
 #define _A_T_UARTResource(N, name)        MAKE_UNPACKING_MACRO(UARTResource, N, name)
+#define _A_T_UDPSocketResource(N, name)   MAKE_UNPACKING_MACRO(UDPSocketResource, N, name)
+#define _A_T_TCPSocketResource(N, name)   MAKE_UNPACKING_MACRO(TCPSocketResource, N, name)
+#define _A_T_TCPServerSocketResource(N, name)   MAKE_UNPACKING_MACRO(TCPServerSocketResource, N, name)
+#define _A_T_SubprocessResource(N, name)  MAKE_UNPACKING_MACRO(SubprocessResource, N, name)
+#define _A_T_ReadPipeResource(N, name)    MAKE_UNPACKING_MACRO(ReadPipeResource, N, name)
+#define _A_T_WritePipeResource(N, name)   MAKE_UNPACKING_MACRO(WritePipeResource, N, name)
 #define _A_T_I2SResource(N, name)         MAKE_UNPACKING_MACRO(I2SResource, N, name)
 #define _A_T_AdcResource(N, name)         MAKE_UNPACKING_MACRO(AdcResource, N, name)
 #define _A_T_DacResource(N, name)         MAKE_UNPACKING_MACRO(DacResource, N, name)
 #define _A_T_PWMResource(N, name)         MAKE_UNPACKING_MACRO(PWMResource, N, name)
 #define _A_T_PcntUnitResource(N, name)    MAKE_UNPACKING_MACRO(PcntUnitResource, N, name)
 #define _A_T_RMTResource(N, name)         MAKE_UNPACKING_MACRO(RMTResource, N, name)
-#define _A_T_GAPResource(N, name)         MAKE_UNPACKING_MACRO(GAPResource, N, name)
-#define _A_T_GATTResource(N, name)        MAKE_UNPACKING_MACRO(GATTResource, N, name)
-#define _A_T_BLEServerConfigGroup(N, name)  MAKE_UNPACKING_MACRO(BLEServerConfigGroup, N, name)
+#define _A_T_BLECentralManagerResource(N, name) MAKE_UNPACKING_MACRO(BLECentralManagerResource, N, name)
+#define _A_T_BLERemoteDeviceResource(N, name)   MAKE_UNPACKING_MACRO(BLERemoteDeviceResource, N, name)
+
+#define _A_T_BLEPeripheralManagerResource(N, name) MAKE_UNPACKING_MACRO(BLEPeripheralManagerResource, N, name)
+#define _A_T_BLECharacteristicResource(N, name) MAKE_UNPACKING_MACRO(BLECharacteristicResource, N, name)
+#define _A_T_BLEServiceResource(N, name)        MAKE_UNPACKING_MACRO(BLEServiceResource, N, name)
+#define _A_T_BLEServerConfigGroup(N, name)      MAKE_UNPACKING_MACRO(BLEServerConfigGroup, N, name)
 #define _A_T_BLEServerServiceResource(N, name)  MAKE_UNPACKING_MACRO(BLEServerServiceResource, N, name)
 #define _A_T_BLEServerCharacteristicResource(N, name)  MAKE_UNPACKING_MACRO(BLEServerCharacteristicResource, N, name)
 #define _A_T_ServiceDescription(N, name)  MAKE_UNPACKING_MACRO(ServiceDescription, N, name)
 #define _A_T_Peer(N, name)                MAKE_UNPACKING_MACRO(Peer, N, name)
 #define _A_T_Channel(N, name)             MAKE_UNPACKING_MACRO(Channel, N, name)
+#define _A_T_GcmContext(N, name)          MAKE_UNPACKING_MACRO(GcmContext, N, name)
 
 // ARGS is expanded to one of the following depending on number of passed parameters.
 #define _ODD ARGS cannot take odd number of arguments
@@ -1118,7 +1159,7 @@ class Primitive {
 
   // Module-specific primitive lookup. May return null if the primitive isn't linked in.
   static const PrimitiveEntry* at(unsigned module, unsigned index) {
-    const PrimitiveEntry* table = _primitives[module];
+    const PrimitiveEntry* table = primitives_[module];
     return (table == null) ? null : &table[index];
   }
 
@@ -1133,7 +1174,7 @@ class Primitive {
   }
 
  private:
-  static const PrimitiveEntry* _primitives[];
+  static const PrimitiveEntry* primitives_[];
 };
 
 } // namespace toit
