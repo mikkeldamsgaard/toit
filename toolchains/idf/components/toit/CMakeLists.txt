@@ -151,7 +151,7 @@ function(toit_postprocess)
                     TARGET firmware
                     POST_BUILD
                     COMMAND "${ASSETS_BIN}" "--assets=entry_assets.bin" create
-                    COMMAND "${ASSETS_BIN}" "--assets=entry_assets.bin" "add" "--format" "ubjson"
+                    COMMAND "${ASSETS_BIN}" "--assets=entry_assets.bin" "add" "--format" "tison"
                             ${ASSET_NAME} ${RUN_PROGRAM_ASSETS_FILE}
                     COMMAND echo envelope: asset for program created
             )
