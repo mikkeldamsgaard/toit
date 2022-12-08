@@ -47,7 +47,7 @@ class InitialMemoryManager {
 
 class ObjectHeap {
  public:
-  ObjectHeap(Program* program, Process* owner, Chunk* initial_chunk);
+  ObjectHeap(Program* program, Process* owner, Chunk* initial_chunk, Object** globals);
   ~ObjectHeap();
 
   // TODO: In the new heap there need not be a max allocation size.
@@ -122,7 +122,7 @@ class ObjectHeap {
 
   Object** global_variables() const { return global_variables_; }
   Task* task() { return task_; }
-  void set_task(Task* task);
+  void set_task(Task* task) { task_ = task; }
 
   // Garbage collection operation for runtime objects.
   GcType gc(bool try_hard);

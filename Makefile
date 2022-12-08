@@ -239,7 +239,7 @@ menuconfig-no-env: check-env check-esp32-env
 
 .PHONY: flash
 flash:
-	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then 'source $(IDF_PATH)/export.sh'; fi; \
+	if [ "$(shell command -v xtensa-esp32-elf-g++)" = "" ]; then source '$(IDF_PATH)/export.sh'; fi; \
 	    $(MAKE) flash-no-env
 
 .PHONY: flash-no-env
@@ -275,6 +275,7 @@ update-gold:
 	$(MAKE) rebuild-cmake
 	(cd build/$(HOST) && ninja update_gold)
 	(cd build/$(HOST) && ninja update_minus_s_gold)
+	(cd build/$(HOST) && ninja update_type_gold)
 
 .PHONY: test-health
 test-health: download-packages

@@ -118,17 +118,17 @@ InitialMemoryManager::~InitialMemoryManager() {
   }
 }
 
-ObjectHeap::ObjectHeap(Program* program, Process* owner, Chunk* initial_chunk)
+ObjectHeap::ObjectHeap(Program* program, Process* owner, Chunk* initial_chunk, Object** global_variables)
     : program_(program)
     , owner_(owner)
     , two_space_heap_(program, this, initial_chunk)
     , external_memory_(0)
-    , total_external_memory_(0) {
+    , total_external_memory_(0)
+    , global_variables_(global_variables) {
   if (!initial_chunk) return;
   task_ = allocate_task();
   ASSERT(task_);  // Should not fail, because a newly created heap has at least
                   // enough space for the task structure.
-  global_variables_ = program->global_variables.copy();
   // Currently the heap is empty and it has one block allocated for objects.
   update_pending_limit();
   limit_ = pending_limit_;
@@ -258,15 +258,7 @@ Task* ObjectHeap::allocate_task() {
   for (int i = Task::ID_INDEX + 1; i < fields; i++) {
     result->at_put(i, program()->null_object());
   }
-  stack->set_task(result);
   return result;
-}
-
-void ObjectHeap::set_task(Task* task) {
-  task_ = task;
-  // The interpreter doesn't use the write barrier when pushing to the
-  // stack so we have to add it here.
-  GcMetadata::insert_into_remembered_set(task->stack());
 }
 
 Stack* ObjectHeap::allocate_stack(int length) {

@@ -65,14 +65,14 @@ PRIMITIVE(write_string_on_stdout) {
   ARGS(cstring, message, bool, add_newline);
   fprintf(stdout, "%s%s", message, add_newline ? "\n" : "");
   fflush(stdout);
-  return _raw_message;
+  return process->program()->null_object();
 }
 
 PRIMITIVE(write_string_on_stderr) {
   ARGS(cstring, message, bool, add_newline);
   fprintf(stderr, "%s%s", message, add_newline ? "\n" : "");
   fflush(stderr);
-  return _raw_message;
+  return process->program()->null_object();
 }
 
 PRIMITIVE(main_arguments) {
@@ -149,14 +149,23 @@ PRIMITIVE(spawn) {
     OTHER_ERROR;
   }
 
+  Object** global_variables = process->program()->global_variables.copy();
+  if (!global_variables) {
+    encoder.free_copied();
+    free(buffer);
+    MALLOC_FAILED;
+  }
+
   int pid = VM::current()->scheduler()->spawn(
       process->program(),
       process->group(),
       priority,
       method,
       buffer,
-      manager.initial_chunk);
+      manager.initial_chunk,
+      global_variables);
   if (pid == Scheduler::INVALID_PROCESS_ID) {
+    free(global_variables);
     encoder.free_copied();
     free(buffer);
     MALLOC_FAILED;
@@ -1314,7 +1323,7 @@ PRIMITIVE(string_rune_count) {
     count -= Utils::popcount(w & end_mask);
   }
 
-  return Primitive::integer(count, process);
+  return Smi::from(count);
 }
 
 PRIMITIVE(smi_to_string_base_10) {
@@ -1807,20 +1816,18 @@ PRIMITIVE(task_new) {
   if (task == null) ALLOCATION_FAILED;
   Method entry = process->program()->entry_task();
   if (!entry.is_valid()) FATAL("Cannot locate task entry method");
+  Task* current = process->object_heap()->task();
 
-  Object* tru = process->program()->true_object();
-  if ((reinterpret_cast<uword>(tru) & 3) != 1) FATAL("Program heap misaligned");
-
-  Task* old = process->object_heap()->task();
-  process->scheduler_thread()->interpreter()->store_stack();
+  Interpreter* interpreter = process->scheduler_thread()->interpreter();
+  interpreter->store_stack();
 
   process->object_heap()->set_task(task);
-  process->scheduler_thread()->interpreter()->load_stack();
-  process->scheduler_thread()->interpreter()->prepare_task(entry, code);
-  process->scheduler_thread()->interpreter()->store_stack();
+  interpreter->load_stack();
+  interpreter->prepare_task(entry, code);
+  interpreter->store_stack();
 
-  process->object_heap()->set_task(old);
-  process->scheduler_thread()->interpreter()->load_stack();
+  process->object_heap()->set_task(current);
+  interpreter->load_stack();
 
   return task;
 }
@@ -1831,11 +1838,12 @@ PRIMITIVE(task_transfer) {
   if (from != to) {
     // Make sure we don't transfer to a dead task.
     if (!to->has_stack()) OTHER_ERROR;
-    process->scheduler_thread()->interpreter()->store_stack();
+    Interpreter* interpreter = process->scheduler_thread()->interpreter();
+    interpreter->store_stack();
     // Remove the link from the task to the stack if requested.
     if (detach_stack) from->detach_stack();
     process->object_heap()->set_task(to);
-    process->scheduler_thread()->interpreter()->load_stack();
+    interpreter->load_stack();
   }
   return Primitive::mark_as_error(to);
 }
@@ -1970,7 +1978,7 @@ PRIMITIVE(add_finalizer) {
   ARGS(HeapObject, object, Object, finalizer)
   if (process->has_finalizer(object, finalizer)) OUT_OF_BOUNDS;
   if (!process->add_finalizer(object, finalizer)) MALLOC_FAILED;
-  return object;
+  return process->program()->null_object();
 }
 
 PRIMITIVE(remove_finalizer) {
