@@ -198,14 +198,26 @@ PRIMITIVE(create) {
     QueueHandle_t queue;
     int options;
     esp_err_t err;
+    int interrupt_flags;
   } args;
+
 
   if (err == ESP_OK) {
     args.options = options;
+    args.interrupt_flags = 0;
+#ifdef CONFIG_UART_ISR_IN_IRAM
+    args.interrupt_flags |= ESP_INTR_FLAG_IRAM;
+#endif
+    if (baud_rate >= 460800) {
+      args.interrupt_flags |= ESP_INTR_FLAG_LEVEL3 | ESP_INTR_FLAG_SHARED;
+    } else {
+      args.interrupt_flags |= ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_LEVEL2 | ESP_INTR_FLAG_SHARED;
+    }
+
     SystemEventSource::instance()->run([&]() -> void {
       int buffer_size = 2 * 1024;
       // Initialize using default priority.
-      args.err = uart_driver_install(port, buffer_size, buffer_size, 32, &args.queue, ESP_INTR_FLAG_IRAM);
+      args.err = uart_driver_install(port, buffer_size, buffer_size, 32, &args.queue, args.interrupt_flags);
       if (args.err == ESP_OK) {
         int flags = 0;
         if ((args.options & 1) != 0) flags |= UART_SIGNAL_TXD_INV;
@@ -343,7 +355,7 @@ PRIMITIVE(read) {
   if (err != ESP_OK) {
     return Primitive::os_error(err, process);
   }
-
+  //printf("<<%i ",available);
   ByteArray* data = process->allocate_byte_array(available, /*force_external*/ available != 0);
   if (data == null) ALLOCATION_FAILED;
 

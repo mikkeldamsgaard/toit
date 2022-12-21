@@ -34,7 +34,8 @@ EventQueueEventSource::EventQueueEventSource()
     , Thread("EVQ")
     , stop_(xSemaphoreCreateBinary())
     , gpio_queue_(xQueueCreate(32, sizeof(GpioEvent)))
-    , queue_set_(xQueueCreateSet(32)) {
+    , queue_set_(xQueueCreateSet(1000)) {
+  printf("ABSSAB: 1000\n");
   xQueueAddToSet(stop_, queue_set_);
   xQueueAddToSet(gpio_queue_, queue_set_);
 
