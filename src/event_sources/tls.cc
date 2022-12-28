@@ -38,6 +38,7 @@ bool TlsEventSource::start() {
   ASSERT(sockets_changed_ == null);
   sockets_changed_ = OS::allocate_condition_variable(mutex());
   if (sockets_changed_ == null) return false;
+  priority=0;
   if (!spawn(5 * KB)) {
     OS::dispose(sockets_changed_);
     sockets_changed_ = null;

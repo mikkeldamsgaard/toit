@@ -20,6 +20,8 @@
 #include "resolver_primitive.h"
 #include "set.h"
 
+#include "../objects.h"
+
 namespace toit {
 namespace compiler {
 
@@ -128,8 +130,20 @@ class SourceInfoEmitter: public SourceInfoCollector {
   }
 };
 
+void SourceMapper::MethodMapper::register_call(ir::Call* call, int bytecode_offset) {
+  source_mapper()->register_expression(call, method_index_, bytecode_offset);
+}
+
+void SourceMapper::MethodMapper::register_call(ir::ReferenceGlobal* call, int bytecode_offset) {
+  source_mapper()->register_expression(call, method_index_, bytecode_offset);
+}
+
+void SourceMapper::MethodMapper::register_as_check(ir::Typecheck* check, int bytecode_offset) {
+  source_mapper()->register_expression(check, method_index_, bytecode_offset);
+  source_mapper()->register_as_check(check, method_index_, bytecode_offset);
+}
+
 void SourceMapper::visit_selectors(SourceInfoCollector* collector) {
-  // For now just write unique
   collector->write_int(selectors_.size());
   for (auto location_id : selectors_.keys()) {
     collector->write_int(location_id);
@@ -177,18 +191,6 @@ void SourceMapper::visit_method_info(SourceInfoCollector* collector) {
     for (auto pair : entry.as_class_names) {
       collector->write_int(pair.first);
       collector->write_string(pair.second);
-    }
-    collector->write_int(entry.pubsub_info.size());
-    for (auto entry : entry.pubsub_info) {
-      collector->write_int(entry.bytecode_offset);
-      collector->write_int(entry.target_dispatch_index);
-      if (entry.topic == null) {
-        collector->write_byte(0);
-        collector->write_string("");
-      } else {
-        collector->write_byte(1);
-        collector->write_string(entry.topic);
-      }
     }
   }
 }
@@ -298,12 +300,15 @@ uint8* SourceMapper::cook(int* size) {
 }
 
 
-SourceMapper::MethodEntry SourceMapper::build_method_entry(int index,
+SourceMapper::MethodEntry SourceMapper::build_method_entry(ir::Node* node,
+                                                           int index,
                                                            MethodType type,
                                                            int outer,
                                                            const char* name,
                                                            const char* holder_name,
                                                            Source::Range range) {
+  ASSERT(!method_indexes_.contains_key(node));
+  method_indexes_[node] = index;
   auto location = manager_->compute_location(range.from());
   return {
     .index = index,
@@ -388,6 +393,23 @@ void SourceMapper::add_global_entry(ir::Global* global) {
   });
 }
 
+int SourceMapper::position_for_method(ir::Node* node) const {
+  auto probe = method_indexes_.find(node);
+  if (probe == method_indexes_.end()) return -1;
+  auto& method_data = source_information_[probe->second];
+  return method_data.id;
+}
+
+int SourceMapper::position_for_expression(ir::Expression* expression) const {
+  auto probe = expression_positions_.find(expression);
+  if (probe == expression_positions_.end()) return -1;
+  const std::pair<int,int>& entry = probe->second;
+  int method_index = entry.first;
+  int bytecode_offset = entry.second;
+  auto& method_data = source_information_[method_index];
+  return method_data.id + Method::entry_offset() + bytecode_offset;
+}
+
 SourceMapper::MethodMapper SourceMapper::register_method(ir::Method* method) {
   int index = source_information_.size();
   auto name = method->name().c_str();
@@ -420,7 +442,7 @@ SourceMapper::MethodMapper SourceMapper::register_method(ir::Method* method) {
   int holder_id;
   const char* holder_name;
   extract_holder_information(method->holder(), &holder_id, &holder_name);
-  source_information_.push_back(build_method_entry(index, type, holder_id, name, holder_name, range));
+  source_information_.push_back(build_method_entry(method, index, type, holder_id, name, holder_name, range));
   return MethodMapper(this, index);
 }
 
@@ -433,7 +455,7 @@ SourceMapper::MethodMapper SourceMapper::register_global(ir::Global* global) {
   int holder_id;
   const char* holder_name;
   extract_holder_information(global->holder(), &holder_id, &holder_name);
-  source_information_.push_back(build_method_entry(index, MethodType::GLOBAL, holder_id, name, holder_name, range));
+  source_information_.push_back(build_method_entry(global, index, MethodType::GLOBAL, holder_id, name, holder_name, range));
   return MethodMapper(this, index);
 }
 
@@ -442,7 +464,7 @@ SourceMapper::MethodMapper SourceMapper::register_lambda(int outer_index, ir::Co
   auto name = "<lambda>";
   auto range = code->range();
   int encoded_outer = encode_outer_index(outer_index);
-  source_information_.push_back(build_method_entry(index, MethodType::LAMBDA, encoded_outer, name, "", range));
+  source_information_.push_back(build_method_entry(code, index, MethodType::LAMBDA, encoded_outer, name, "", range));
   return MethodMapper(this, index);
 }
 
@@ -451,13 +473,16 @@ SourceMapper::MethodMapper SourceMapper::register_block(int outer_index, ir::Cod
   auto name = "<block>";
   auto range = code->range();
   int encoded_outer = encode_outer_index(outer_index);
-  source_information_.push_back(build_method_entry(index, MethodType::BLOCK, encoded_outer, name, "", range));
+  source_information_.push_back(build_method_entry(code, index, MethodType::BLOCK, encoded_outer, name, "", range));
   return MethodMapper(this, index);
 }
 
-void SourceMapper::register_bytecode(int method_index, int bytecode_offset, Source::Range range) {
+void SourceMapper::register_expression(ir::Expression* expression, int method_index, int bytecode_offset) {
+  ASSERT(!expression_positions_.contains_key(expression));
+  expression_positions_[expression] = std::pair<int, int>(method_index, bytecode_offset);
   ASSERT(method_index >= 0);
   auto& method_data = source_information_[method_index];
+  auto range = expression->range();
   auto location = manager_->compute_location(range.from());
   method_data.bytecode_positions[bytecode_offset] = {
     .line = location.line_number,
@@ -465,23 +490,10 @@ void SourceMapper::register_bytecode(int method_index, int bytecode_offset, Sour
   };
 }
 
-void SourceMapper::register_as(int method_index, int bytecode_offset, const char* class_name) {
+void SourceMapper::register_as_check(ir::Typecheck* check, int method_index, int bytecode_offset) {
   ASSERT(method_index >= 0);
   auto& method_data = source_information_[method_index];
-  method_data.as_class_names[bytecode_offset] = class_name;
-}
-
-void SourceMapper::register_pubsub_call(int method_index,
-                                        int bytecode_offset,
-                                        int target_dispatch_index,
-                                        const char* topic) {
-  ASSERT(method_index >= 0);
-  auto& method_data = source_information_[method_index];
-  method_data.pubsub_info.push_back({
-    .bytecode_offset = bytecode_offset,
-    .target_dispatch_index = target_dispatch_index,
-    .topic = topic,
-  });
+  method_data.as_class_names[bytecode_offset] = check->type_name().c_str();
 }
 
 void SourceMapper::extract_holder_information(ir::Class* holder,

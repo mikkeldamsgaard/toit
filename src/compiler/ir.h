@@ -600,6 +600,9 @@ class Method : public Node {
 
   void replace_body(Expression* new_body) { body_ = new_body; }
 
+  bool is_dead() const { return is_dead_; }
+  void kill() { is_dead_ = true; }
+
   List<Parameter*> parameters() const { return parameters_; }
   void set_parameters(List<Parameter*> parameters) {
     ASSERT(_parameters_have_correct_index(parameters));
@@ -643,6 +646,7 @@ class Method : public Node {
 
   List<Parameter*> parameters_;
   Expression* body_;
+  bool is_dead_ = false;
 
   static bool _parameters_have_correct_index(List<Parameter*> parameters);
 
@@ -915,6 +919,7 @@ class FieldStore : public Expression {
   Field* field() const { return field_; }
   Expression* value() const { return value_; }
 
+  void replace_receiver(Expression* new_receiver) { receiver_ = new_receiver; }
   void replace_value(Expression* new_value) { value_ = new_value; }
 
   bool is_box_store() const { return is_box_store_; }
@@ -1156,11 +1161,16 @@ class Code : public Expression {
 
   void replace_body(Expression* new_body) { body_ = new_body; }
 
+  bool is_dead() const { return is_dead_; }
+  void kill() { is_dead_ = true; }
+
  private:
   List<Parameter*> parameters_;
   Expression* body_;
   bool is_block_;
   int captured_count_;
+
+  bool is_dead_ = false;
 };
 
 class Reference : public Expression {

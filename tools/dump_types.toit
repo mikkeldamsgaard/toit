@@ -28,7 +28,7 @@ main args:
   command = cli.Command "root"
       --long_help="""
       Dumps propagated types.
-      
+
       Run the compiler with '-Xpropagate -w program.snapshot program.toit > program.types'.
       Then use the generated snapshot and types for this tool.
       """
@@ -43,6 +43,8 @@ main args:
         cli.Flag "sdk"
             --short_help="Show types for the sdk."
             --default=false,
+        cli.Flag "show-positions" --short_name="p"
+            --default=false,
       ]
       --run=:: decode_types it command
   command.run args
@@ -51,9 +53,13 @@ decode_types parsed command -> none:
   snapshot_content := file.read_content parsed["snapshot"]
   types_content := file.read_content parsed["types"]
   types := json.decode types_content
-  show_types --sdk=parsed["sdk"] types snapshot_content
+  show_types types snapshot_content
+      --sdk=parsed["sdk"]
+      --show_positions=parsed["show-positions"]
 
-show_types --sdk/bool types/List snapshot_content/ByteArray -> none:
+show_types types/List snapshot_content/ByteArray -> none
+    --sdk/bool
+    --show_positions/bool:
   bundle := SnapshotBundle snapshot_content
   program := bundle.decode
   methods := {}
@@ -61,13 +67,15 @@ show_types --sdk/bool types/List snapshot_content/ByteArray -> none:
   method_args := {:}
   types.do: | entry/Map |
     position := entry["position"]
-    method := program.method_from_absolute_bci position
-    methods.add method
+    method/ToitMethod := ?
     if entry.contains "type":
+      method = program.method_from_absolute_bci position
       type_strings[position] = type_string program entry["type"]
     else:
+      method = program.method_from_absolute_bci (position + ToitMethod.HEADER_SIZE)
       method_args[position] = entry["arguments"].map: | x |
         type_string program x
+    methods.add method
 
   sorted_methods := List.from methods
   if not sdk:
@@ -78,14 +86,21 @@ show_types --sdk/bool types/List snapshot_content/ByteArray -> none:
     ia := program.method_info_for a.id
     ib := program.method_info_for b.id
     ia.error_path.compare_to ib.error_path --if_equal=:
-      ia.position.line.compare_to ib.position.line
+      ia.position.line.compare_to ib.position.line --if_equal=:
+        ia.name.compare_to ib.name --if_equal=:
+          // Being dependant on the method position in the
+          // bytecode stream isn't great, but as a last
+          // resort for sorting it works since it is only
+          // used to sort different adapter stubs using
+          // their (predictable) order of generation.
+          ia.id.compare_to ib.id
 
   first := true
   sorted_methods.do: | method/ToitMethod |
     if first: first = false
     else: print ""
     args := method_args.get method.id
-    method.output program args --no-show_positions: | position/int |
+    method.output program args --show_positions=show_positions: | position/int |
       type_strings.get position
 
 type_string program/Program type/any -> string:

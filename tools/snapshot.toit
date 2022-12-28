@@ -139,16 +139,16 @@ class Program:
     method_table_.do --values block
 
   method_from_absolute_bci absolute_bci/int -> ToitMethod:
-    if absolute_bci >= methods.last.id: return methods.last
+    if absolute_bci >= methods.last.absolute_entry_bci: return methods.last
     index := methods.index_of
         absolute_bci
-        --binary_compare=: | a/ToitMethod b/int | a.id.compare_to b
+        --binary_compare=: | a/ToitMethod b/int | a.absolute_entry_bci.compare_to b
         --if_absent=: | insertion_index |
           // $insertion_index is the place where absolute_bci would need to be
           //   inserted. As such, the previous index contains the method
           //   that contains the absolute_bci.
           insertion_index - 1
-    assert: methods[index].id <= absolute_bci < methods[index + 1].id;
+    assert: methods[index].absolute_entry_bci <= absolute_bci <= methods[index + 1].id;
     return methods[index]
 
   primitive_name module_index/int primitive_index/int -> string:
@@ -507,6 +507,9 @@ class ToitMethod:
   selector_offset:
     return value
 
+  absolute_entry_bci -> int:
+    return id + HEADER_SIZE
+
   bci_from_absolute_bci absolute_bci/int -> int:
     bci := absolute_bci - id - HEADER_SIZE
     assert: 0 <= bci < bytecodes.size
@@ -532,7 +535,12 @@ class ToitMethod:
     else if format == OP_SS:
       line += " S$(method.uint16 bci + 1)"
     else if format == OP_BL:
-      line += " $program.literals[index]"
+      if index == 0:
+        line += " true"
+      else if index == 1:
+        line += " false"
+      else:
+        line += " $program.literals[index]"
     else if format == OP_SL:
       line += " $program.literals[method.uint16 bci + 1]"
     else if format == OP_BC:
@@ -1210,13 +1218,15 @@ class MethodInfo:
   position /Position ::= ?
   bytecode_positions /Map ::= ?  // of bytecode to Position
   as_class_names /Map ::= ?      // of bytecode to strings
-  pubsub_info /List ::= ?
 
   static INSTANCE_TYPE      ::= 0
   static GLOBAL_TYPE        ::= 1
   static LAMBDA_TYPE        ::= 2
   static BLOCK_TYPE         ::= 3
   static TOP_LEVEL_TYPE     ::= 4
+
+  absolute_entry_bci -> int:
+    return id + ToitMethod.HEADER_SIZE
 
   short_stringify program/Program --show_positions/bool=true:
     prefix := prefix_string program
@@ -1234,7 +1244,7 @@ class MethodInfo:
     print (stringify program)
 
   constructor .id .bytecode_size .name .type .outer .holder_name .absolute_path .error_path
-      .position .bytecode_positions .as_class_names .pubsub_info:
+      .position .bytecode_positions .as_class_names:
 
   stacktrace_string program/Program:
     if type == BLOCK_TYPE:
@@ -1391,19 +1401,6 @@ class MethodSegment extends MapSegment:
       : read_cardinal_
       : read_string_
 
-  read_pubsub_entry_ -> PubsubInfo:
-    bytecode_position := read_cardinal_
-    target_dispatch_index := read_cardinal_
-    has_topic := read_byte_ == 1
-    topic := read_string_
-    return PubsubInfo
-      bytecode_position
-      target_dispatch_index
-      has_topic ? topic : null
-
-  read_pubsub_info_ -> List:
-    return List read_cardinal_: read_pubsub_entry_
-
   read_element_ -> List:
     id    := read_cardinal_
     bytecode_size := read_cardinal_
@@ -1418,9 +1415,8 @@ class MethodSegment extends MapSegment:
     position := read_position_
     bytecode_positions := read_bytecode_positions_
     as_class_names := read_as_class_names_
-    pubsub_info := read_pubsub_info_
     info := MethodInfo id bytecode_size name type outer holder_name \
-        absolute_path path position bytecode_positions as_class_names pubsub_info
+        absolute_path path position bytecode_positions as_class_names
     return [info.id, info]
 
   stringify -> string:
@@ -1516,13 +1512,6 @@ class SelectorsSegment extends MapSegment:
 
   stringify -> string:
     return "Selectors"
-
-class PubsubInfo:
-  bytecode_position /int ::= ?
-  target_dispatch_index /int ::= ?
-  topic /string? ::= ?
-
-  constructor .bytecode_position .target_dispatch_index .topic:
 
 class StringSegment extends ListSegment:
 

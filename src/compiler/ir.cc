@@ -270,6 +270,7 @@ Node* ReplacingVisitor::visit_Error(Error* node) {
 Node* ReplacingVisitor::visit_Nop(Nop* node) { return visit_Expression(node); }
 
 Node* ReplacingVisitor::visit_FieldStore(FieldStore* node) {
+  node->replace_receiver(_replace_expression(node->receiver()));
   node->replace_value(_replace_expression(node->value()));
   return visit_Expression(node);
 }
@@ -379,12 +380,7 @@ Node* ReplacingVisitor::visit_Lambda(Lambda* node) {
 }
 
 Node* ReplacingVisitor::visit_CallConstructor(CallConstructor* node) {
-  auto replacement = visit(node->target());
-  ASSERT(replacement->is_ReferenceMethod());
-  node->replace_method(replacement->as_ReferenceMethod());
-  replace_arguments(this, node);
-
-  return visit_Call(node);
+  return visit_CallStatic(node);
 }
 
 Node* ReplacingVisitor::visit_CallVirtual(CallVirtual* node) {

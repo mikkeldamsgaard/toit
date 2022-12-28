@@ -126,7 +126,6 @@ Program* Backend::emit(ir::Program* ir_program) {
   auto methods = ir_program->methods();
   auto globals = ir_program->globals();
   auto lookup_failure = ir_program->lookup_failure();
-  auto as_check_failure = ir_program->as_check_failure();
 
   DispatchTable dispatch_table = DispatchTable::build(classes, methods);
 
@@ -181,7 +180,6 @@ Program* Backend::emit(ir::Program* ir_program) {
   }
 
   ByteGen gen(lookup_failure,
-              as_check_failure,
               max_captured_count,
               &dispatch_table,
               &typecheck_indexes,
@@ -228,7 +226,7 @@ void Backend::emit_method(ir::Method* method,
                           ByteGen* gen,
                           DispatchTable* dispatch_table,
                           ProgramBuilder* program_builder) {
-  int dispatch_offset = 0;
+  int dispatch_offset = -1;
   bool is_field_accessor = false;
   if (!method->is_static()) {
     ASSERT(method->holder() != null);
@@ -242,8 +240,10 @@ void Backend::emit_method(ir::Method* method,
   int id = gen->assemble_method(method, dispatch_offset, is_field_accessor);
 
   if (method->is_static()) {
+    ASSERT(dispatch_offset < 0);
     program_builder->set_dispatch_table_entry(dispatch_table->slot_index_for(method), id);
   } else {
+    ASSERT(dispatch_offset >= 0);
     bool was_executed;
     std::function<void (int)> callback = [&](int index) {
       was_executed = true;
@@ -263,7 +263,13 @@ void Backend::emit_global(ir::Global* global,
     int id = gen->assemble_global(global);
     program_builder->push_lazy_initializer_id(id);
   } else {
-    auto value = global->body()->as_Return()->value();
+    auto body = global->body();
+    if (body->is_Sequence()) {
+      List<ir::Expression*> sequence = body->as_Sequence()->expressions();
+      ASSERT(sequence.length() == 1);
+      body = sequence[0];
+    }
+    auto value = body->as_Return()->value();
     if (value->is_LiteralNull()) {
       program_builder->push_null();
     } else if (value->is_LiteralInteger()) {

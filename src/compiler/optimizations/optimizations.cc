@@ -26,30 +26,78 @@
 #include "../resolver_scope.h"
 #include "../set.h"
 
-#include "../../flags.h"
-
 namespace toit {
 namespace compiler {
 
 using namespace ir;
 
+class KillerVisitor : public TraversingVisitor {
+ public:
+  explicit KillerVisitor(TypeOracle* oracle)
+      : oracle_(oracle) {}
+
+  void visit_Method(Method* node) {
+    TraversingVisitor::visit_Method(node);
+    if (oracle_->is_dead(node)) node->kill();
+  }
+
+  void visit_Code(Code* node) {
+    TraversingVisitor::visit_Code(node);
+    if (oracle_->is_dead(node)) node->kill();
+  }
+
+  void visit_Global(Global* node) {
+    TraversingVisitor::visit_Method(node);
+    mark_if_eager(node);
+    if (node->is_lazy() && oracle_->is_dead(node)) node->kill();
+  }
+
+ private:
+  TypeOracle* const oracle_;
+
+  void mark_if_eager(Global* global) {
+    // This runs after the constant propagation phase, so it is
+    // simple to check if the body is a return of a potentially
+    // folded literal.
+    auto body = global->body();
+    if (body->is_Sequence()) {
+      List<ir::Expression*> sequence = body->as_Sequence()->expressions();
+      if (sequence.length() != 1) return;
+      body = sequence[0];
+    }
+    if (!body->is_Return()) return;
+    auto value = body->as_Return()->value();
+    if (value->is_Literal()) {
+      ASSERT(!value->is_LiteralUndefined());
+      global->mark_eager();
+    }
+  }
+};
+
 class OptimizationVisitor : public ReplacingVisitor {
  public:
-  OptimizationVisitor(Program* program,
+  OptimizationVisitor(TypeOracle* oracle,
                       const UnorderedMap<Class*, QueryableClass> queryables,
                       const UnorderedSet<Symbol>& field_names)
-      : program_(program)
+      : oracle_(oracle)
       , holder_(null)
       , method_(null)
       , queryables_(queryables)
       , field_names_(field_names) {}
 
+  Node* visit_Method(Method* node) {
+    if (node->is_dead()) return node;
+    method_ = node;
+    eliminate_dead_code(node, oracle_);
+    Node* result = ReplacingVisitor::visit_Method(node);
+    eliminate_dead_code(node, oracle_);
+    method_ = null;
+    return result;
+  }
+
   /// Transforms virtual calls into static calls (when possible).
   /// Transforms virtual getters/setters into field accesses (when possible).
   Node* visit_CallVirtual(CallVirtual* node) {
-    // TODO(kasper): This feels a bit hacky, but we prefer keeping the
-    // virtual calls for the purposes of the type propagation phase.
-    if (Flags::propagate) return node;
     node = ReplacingVisitor::visit_CallVirtual(node)->as_CallVirtual();
     return optimize_virtual_call(node, holder_, method_, field_names_, queryables_);
   }
@@ -60,10 +108,8 @@ class OptimizationVisitor : public ReplacingVisitor {
     return return_peephole(node);
   }
 
-  /// Removes code after `return`s.
   Node* visit_Sequence(Sequence* node) {
     node = ReplacingVisitor::visit_Sequence(node)->as_Sequence();
-    node = eliminate_dead_code(node, program_);
     return simplify_sequence(node);
   }
 
@@ -79,20 +125,22 @@ class OptimizationVisitor : public ReplacingVisitor {
   }
 
   void set_class(Class* klass) { holder_ = klass; }
-  void set_method(Method* method) { method_ = method; }
 
  private:
-  Program* program_;
+  TypeOracle* const oracle_;
+
   Class* holder_;  // Null, if not in class (or a static method/field).
   Method* method_;
   UnorderedMap<Class*, QueryableClass> queryables_;
   UnorderedSet<Symbol> field_names_;
 };
 
-void optimize(Program* program) {
+void optimize(Program* program, TypeOracle* oracle) {
   // The constant propagation runs independently, as it builds up its own
   // dependency graph.
   propagate_constants(program);
+  KillerVisitor killer(oracle);
+  killer.visit(program);
 
   auto classes = program->classes();
   auto queryables = build_queryables_from_plain_shapes(classes);
@@ -121,7 +169,7 @@ void optimize(Program* program) {
     }
   }
 
-  OptimizationVisitor visitor(program, queryables, field_names);
+  OptimizationVisitor visitor(oracle, queryables, field_names);
 
   for (auto klass : classes) {
     visitor.set_class(klass);
@@ -129,18 +177,15 @@ void optimize(Program* program) {
     //   different visitor, than for the globals.
     // Unnamed constructors:
     for (auto constructor : klass->constructors()) {
-      visitor.set_method(constructor);
       visitor.visit(constructor);
     }
     // Named constructors are mixed together with the other static entries.
     for (auto statik : klass->statics()->nodes()) {
       if (!statik->is_constructor()) continue;
-      visitor.set_method(statik);
       visitor.visit(statik);
     }
     for (auto method : klass->methods()) {
       ASSERT(method->is_instance());
-      visitor.set_method(method);
       visitor.visit(method);
     }
   }
@@ -148,11 +193,9 @@ void optimize(Program* program) {
   visitor.set_class(null);
   for (auto method : program->methods()) {
     if (method->is_constructor()) continue;  // Already handled within the class.
-    visitor.set_method(method);
     visitor.visit(method);
   }
   for (auto global : program->globals()) {
-    visitor.set_method(global);
     visitor.visit(global);
   }
 }

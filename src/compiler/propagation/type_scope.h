@@ -28,11 +28,17 @@ class TypeScope {
  public:
   explicit TypeScope(MethodTemplate* method);
   TypeScope(BlockTemplate* block, TypeScope* outer, bool linked);
+  TypeScope(int slots, int words_per_type);
   ~TypeScope();
 
-  TypeStack* top() const { return unwrap(wrapped_[level_]); }
+  TypeStack* top() {
+    TypeStack* top = top_;
+    return top ? top : copy_top();
+  }
+
   int level() const { return level_; }
   bool is_in_try_block() const { return level_linked_ >= 0; }
+  int words_per_type() const { return words_per_type_; }
 
   MethodTemplate* method() const { return method_; }
   TypeScope* outer() const { return outer_; }
@@ -47,8 +53,11 @@ class TypeScope {
   void store_outer(TypeSet block, int index, TypeSet value);
   void throw_maybe();
 
-  TypeScope* copy() const;
-  TypeScope* copy_lazily(int level = -1) const;
+  // Create a lazy copy of this type scope. If a target scope
+  // is provided, the copy only consists of the levels
+  // necessary to match the target. The other levels are
+  // discarded.
+  TypeScope* copy_lazy(const TypeScope* target = null) const;
 
   enum MergeKind {
     MERGE_LOCAL,
@@ -59,6 +68,7 @@ class TypeScope {
   bool merge(const TypeScope* other, MergeKind kind);
 
  private:
+  TypeStack* top_ = null;
   const int words_per_type_;
   const int level_;
 
@@ -74,7 +84,9 @@ class TypeScope {
   TypeScope* const outer_;
   uword* const wrapped_;
 
-  TypeScope(const TypeScope* other, int level, bool lazy);
+  TypeScope(const TypeScope* source, const TypeScope* target);
+
+  TypeStack* copy_top();
 
   // References to other stacks are wrapped, so we can tell the
   // difference between stacks we have already copied and stacks

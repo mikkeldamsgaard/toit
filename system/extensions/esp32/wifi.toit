@@ -45,9 +45,11 @@ class WifiServiceDefinition extends NetworkServiceDefinitionBase:
       return connect client arguments[0] arguments[1]
     if index == WifiService.ESTABLISH_INDEX:
       return establish client arguments
-    if index == WifiService.RSSI_INDEX:
+    if index == WifiService.AP_INFO_INDEX:
       network := (resource client arguments) as NetworkResource
-      return rssi network
+      return ap_info network
+    if index == WifiService.SCAN_INDEX:
+      return scan arguments
     return super pid client index arguments
 
   connect client/int -> List:
@@ -116,8 +118,20 @@ class WifiServiceDefinition extends NetworkServiceDefinitionBase:
   address resource/NetworkResource -> ByteArray:
     return (state_.module as WifiModule).address.to_byte_array
 
-  rssi resource/NetworkResource -> int?:
-    return (state_.module as WifiModule).rssi
+  ap_info resource/NetworkResource -> List:
+    return (state_.module as WifiModule).ap_info
+  
+  scan config/Map -> List:
+    if state_.module:
+      throw "wifi already connected or established"
+    module := WifiModule.sta this "" ""
+    try:
+      channels := config.get wifi.CONFIG_SCAN_CHANNELS
+      passive := config.get wifi.CONFIG_SCAN_PASSIVE
+      period := config.get wifi.CONFIG_SCAN_PERIOD
+      return module.scan channels passive period
+    finally:
+      module.disconnect
 
   on_module_closed module/WifiModule -> none:
     resources_do: it.notify_ NetworkService.NOTIFY_CLOSED
@@ -128,6 +142,7 @@ class WifiModule implements NetworkModule:
   static WIFI_IP_LOST      ::= 1 << 2
   static WIFI_DISCONNECTED ::= 1 << 3
   static WIFI_RETRY        ::= 1 << 4
+  static WIFI_SCAN_DONE    ::= 1 << 5
 
   static WIFI_RETRY_DELAY_     ::= Duration --s=1
   static WIFI_CONNECT_TIMEOUT_ ::= Duration --s=10
@@ -232,8 +247,28 @@ class WifiModule implements NetworkModule:
     address_ = net.IpAddress ip
     logger_.info "network address statically assigned" --tags={"ip": address_}
 
-  rssi -> int?:
-    return wifi_get_rssi_ resource_group_
+  ap_info -> List:
+    return wifi_get_ap_info_ resource_group_
+
+  scan channels/ByteArray passive/bool period/int -> List:
+    if ap or not resource_group_:
+      throw "wifi is AP mode or not initialized"
+
+    resource := wifi_init_scan_ resource_group_
+    scan_events := monitor.ResourceState_ resource_group_ resource
+    result := []
+    try:
+      channels.do:
+        wifi_start_scan_ resource_group_ it passive period
+        state := scan_events.wait
+        if (state & WIFI_SCAN_DONE) == 0: throw "WIFI_SCAN_ERROR"
+        scan_events.clear_state WIFI_SCAN_DONE
+        array := wifi_read_scan_ resource_group_
+        result.add_all array
+    finally:
+      scan_events.dispose
+
+    return result
 
   on_event_ state/int:
     // TODO(kasper): We should be clearing the state in the
@@ -268,5 +303,14 @@ wifi_disconnect_reason_ resource:
 wifi_get_ip_ resource_group -> ByteArray?:
   #primitive.wifi.get_ip
 
-wifi_get_rssi_ resource_group -> int?:
-  #primitive.wifi.get_rssi
+wifi_init_scan_ resource_group:
+  #primitive.wifi.init_scan
+
+wifi_start_scan_ resource_group channel passive period_ms:
+  #primitive.wifi.start_scan
+
+wifi_read_scan_ resource_group -> Array_:
+  #primitive.wifi.read_scan
+
+wifi_get_ap_info_ resource_group -> Array_:
+  #primitive.wifi.ap_info

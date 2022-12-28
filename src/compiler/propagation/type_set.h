@@ -28,15 +28,70 @@ class BlockTemplate;
 
 class TypeSet {
  public:
+  class Iterator {
+   public:
+    Iterator(TypeSet type, int words_per_type)
+        : cursor_(type.bits_)
+        , end_(&type.bits_[words_per_type - 1]) {
+      ASSERT(!type.is_block());
+      uword bits = *cursor_;
+      // The first bit of a type set is used as a marker and
+      // guaranteed to be 0 for non-block typesets.
+      // The base is thus -1.
+      ASSERT((bits & 1) == 0);
+      int base = -1;
+      while (bits == 0 && cursor_ != end_) {
+        bits = *(++cursor_);
+        base += WORD_BIT_SIZE;
+      }
+      bits_ = bits;
+      base_ = base;
+    }
+
+    bool has_next() const { return bits_ != 0; }
+
+    unsigned next() {
+      ASSERT(has_next());
+      uword bits = bits_;
+      // Compute the index of the next bit by counting
+      // trailing zeros (ctz).
+      int index = Utils::ctz(bits);
+      int base = base_;
+      unsigned result = index + base;
+      bits &= ~(static_cast<uword>(1) << index);
+      while (bits == 0 && cursor_ != end_) {
+        bits = *(++cursor_);
+        base += WORD_BIT_SIZE;
+      }
+      bits_ = bits;
+      base_ = base;
+      return result;
+    }
+
+   private:
+    uword bits_;
+    int base_;  // The class-index of the first bit in bits_.
+    uword* cursor_;
+    uword* const end_;
+  };
+
   TypeSet(const TypeSet& other)
       : bits_(other.bits_) {}
+
+  static TypeSet invalid() {
+    return TypeSet(null);
+  }
+
+  bool is_valid() const {
+    return bits_ != null;
+  }
 
   bool is_block() const {
     return bits_[0] == 1;
   }
 
-  int size(Program* program) const;
-  bool is_empty(Program* program) const;
+  int size(int words_per_type) const;
+  bool is_empty(int words_per_type) const;
   bool is_any(Program* program) const;
 
   BlockTemplate* block() const {
@@ -57,8 +112,24 @@ class TypeSet {
     return (old_bits & mask) != 0;
   }
 
+  bool contains_all(TypeSet other, int words) const {
+    ASSERT(!is_block());
+    ASSERT(!other.is_block());
+    for (int i = 0; i < words; i++) {
+      uword old_bits = bits_[i];
+      uword new_bits = old_bits | other.bits_[i];
+      if (new_bits != old_bits) return false;
+    }
+    return true;
+  }
+
   bool contains_null(Program* program) const { return contains_instance(program->null_class_id()); }
+  bool contains_true(Program* program) const { return contains_instance(program->true_class_id()); }
+  bool contains_false(Program* program) const { return contains_instance(program->false_class_id()); }
   bool contains_instance(Smi* class_id) const { return contains(class_id->value()); }
+
+  bool can_be_falsy(Program* program) const;
+  bool can_be_truthy(Program* program) const;
 
   bool add(unsigned type) {
     ASSERT(!is_block());
@@ -70,7 +141,7 @@ class TypeSet {
     return (old_bits & mask) != 0;
   }
 
-  void add_any(Program* program) { fill(words_per_type(program)); }
+  void add_any(Program* program) { add_range(0, program->class_bits.length()); }
   bool add_array(Program* program) { return add_instance(program->array_class_id()); }
   bool add_byte_array(Program* program) { return add_instance(program->byte_array_class_id()); }
   bool add_float(Program* program) { return add_instance(program->double_class_id()); }
@@ -79,25 +150,13 @@ class TypeSet {
   bool add_smi(Program* program) { return add_instance(program->smi_class_id()); }
   bool add_string(Program* program) { return add_instance(program->string_class_id()); }
   bool add_task(Program* program) { return add_instance(program->task_class_id()); }
+  bool add_list(Program* program) { return add_instance(program->list_class_id()); }
 
   bool add_int(Program* program);
   bool add_bool(Program* program);
+  void add_range(unsigned start, unsigned end);
 
-  void remove(unsigned type) {
-    ASSERT(!is_block());
-    unsigned entry = type + 1;
-    unsigned index = entry / WORD_BIT_SIZE;
-    uword old_bits = bits_[index];
-    uword mask = static_cast<uword>(1) << (entry % WORD_BIT_SIZE);
-    bits_[index] = old_bits & ~mask;
-  }
-
-  void remove_null(Program* program) { return remove_instance(program->null_class_id()); }
-  void remove_instance(Smi* class_id) { return remove(class_id->value()); }
-  void remove_range(unsigned start, unsigned end);
-
-  bool remove_typecheck_class(Program* program, int index, bool is_nullable);
-  bool remove_typecheck_interface(Program* program, int index, bool is_nullable);
+  void add_all_also_blocks(TypeSet other, int words);
 
   bool add_all(TypeSet other, int words) {
     ASSERT(!is_block());
@@ -112,14 +171,29 @@ class TypeSet {
     return added;
   }
 
-  void clear(int words) {
-    memset(bits_, 0, words * WORD_SIZE);
+  void remove(unsigned type) {
     ASSERT(!is_block());
+    unsigned entry = type + 1;
+    unsigned index = entry / WORD_BIT_SIZE;
+    uword old_bits = bits_[index];
+    uword mask = static_cast<uword>(1) << (entry % WORD_BIT_SIZE);
+    bits_[index] = old_bits & ~mask;
   }
 
-  void fill(int words) {
-    memset(bits_, 0xff, words * WORD_SIZE);
-    bits_[0] &= ~1;  // Clear LSB.
+  void remove_null(Program* program) { return remove_instance(program->null_class_id()); }
+  void remove_instance(Smi* class_id) { return remove(class_id->value()); }
+  void remove_range(unsigned start, unsigned end);
+
+  enum {
+    TYPECHECK_CAN_SUCCEED = 1 << 0,
+    TYPECHECK_CAN_FAIL    = 1 << 1,
+  };
+
+  int remove_typecheck_class(Program* program, int index, bool is_nullable);
+  int remove_typecheck_interface(Program* program, int index, bool is_nullable);
+
+  void clear(int words) {
+    memset(bits_, 0, words * WORD_SIZE);
     ASSERT(!is_block());
   }
 
