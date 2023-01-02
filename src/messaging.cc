@@ -735,7 +735,10 @@ uint64 MessageDecoder::read_uint64() {
 bool ExternalSystemMessageHandler::start(int priority) {
   ASSERT(process_ == null);
   Process* process = vm_->scheduler()->run_external(this);
-  if (process == null) return false;
+  if (process == null) {
+    printf ("WFT!\n");
+    return false;
+  }
   process_ = process;
   if (priority >= 0) set_priority(Utils::min(priority, 0xff));
   return true;
@@ -782,6 +785,9 @@ bool ExternalSystemMessageHandler::send(int pid, int type, void* data, int lengt
 Interpreter::Result ExternalSystemMessageHandler::run() {
   Process* process = process_;
   while (true) {
+    if (process == null) {
+      return Interpreter::Result(Interpreter::Result::YIELDED);
+    }
     Message* message = process->peek_message();
     if (message == null) {
       return Interpreter::Result(Interpreter::Result::YIELDED);
