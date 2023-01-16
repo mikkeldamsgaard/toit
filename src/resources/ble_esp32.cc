@@ -270,15 +270,15 @@ class Subscription;
 typedef class DoubleLinkedList<Subscription> SubscriptionList;
 class Subscription : public SubscriptionList::Element {
  public:
-  Subscription(bool indication, bool notification, uint16 connHandle)
+  Subscription(bool indication, bool notification, uint16 conn_handle)
       : indication_(indication)
       , notification_(notification)
-      , conn_handle_(connHandle) {}
+      , conn_handle_(conn_handle) {}
   void set_indication(bool indication) { indication_ = indication; }
   bool indication() const { return indication_; }
   void set_notification(bool notification) { notification_ = notification; }
   bool notification() const { return notification_; }
-  bool conn_handle() const { return conn_handle_; }
+  uint16 conn_handle() const { return conn_handle_; }
 
  private:
   bool indication_;
@@ -612,6 +612,10 @@ Object* nimble_error_code_to_string(Process* process, int error_code, bool host)
 
 Object* nimle_stack_error(Process* process, int error_code) {
   return nimble_error_code_to_string(process, error_code, false);
+}
+
+Object* nimble_host_stack_error(Process* process, int error_code) {
+  return nimble_error_code_to_string(process, error_code, true);
 }
 
 
@@ -1030,13 +1034,13 @@ bool BleCharacteristicResource::update_subscription_status(uint8_t indicate, uin
     }
   }
 
-  auto subscription = _new Subscription(indicate,notify,conn_handle);
+  auto subscription = _new Subscription(indicate, notify, conn_handle);
   if (!subscription) {
     // Since this method is called from the BLE event handler and there is no
     // toit code monitoring the interaction, we resort to calling gc by hand to
     // try to recover on OOM.
     VM::current()->scheduler()->gc(null, /* malloc_failed = */ true, /* try_hard = */ true);
-    subscription = _new Subscription(indicate,notify,conn_handle);
+    subscription = _new Subscription(indicate, notify, conn_handle);
     if (!subscription) return false;
   }
 
@@ -1161,17 +1165,19 @@ PRIMITIVE(init) {
     MALLOC_FAILED;
   }
   
+  ble_hs_cfg.sync_cb = ble_on_sync;
+
+  nimble_port_init();
+
   auto group = _new BleResourceGroup(process, ble, id, mutex);
   if (!group) {
     free(mutex);
     ble->unuse();
     ble_pool.put(id);
+    nimble_port_deinit();
     MALLOC_FAILED;
   }
 
-  ble_hs_cfg.sync_cb = ble_on_sync;
-
-  nimble_port_init();
 
   proxy->set_external_address(group);
   return proxy;
@@ -2005,8 +2011,8 @@ PRIMITIVE(notify_characteristics_value) {
     err = ble_gattc_indicate_custom(subscription->conn_handle(), characteristic->handle(), om);
   }
 
-  if (err != BLE_ERR_SUCCESS) {
-    return nimle_stack_error(process, err);
+  if (err != BLE_ERR_SUCCESS && err != BLE_HS_ENOTCONN) {
+    return nimble_host_stack_error(process, err);
   }
 
   return process->program()->null_object();
