@@ -40,6 +40,7 @@
 
 #include <soc/soc.h>
 #include <soc/uart_reg.h>
+#include "esp_debug_helpers.h"
 
 #if CONFIG_IDF_TARGET_ESP32C3
   #include <esp32c3/rtc.h>
@@ -660,6 +661,7 @@ class HeapSummaryCollector {
   }
 
   void print(const char* marker) {
+     esp_backtrace_print(25);
     if (marker && strlen(marker) > 0) {
       printf("Heap report @ %s:\n", marker);
     } else {

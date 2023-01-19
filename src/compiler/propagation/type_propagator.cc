@@ -259,16 +259,23 @@ void TypePropagator::propagate(TypeDatabase* types) {
     uint8* entry = program()->entry_task().entry();
     type.clear(words_per_type());
     type.add_instance(program()->task_class_id());
-    types->add_usage(program()->absolute_bci_from_bcp(entry), type);
+    types->add_output(program()->absolute_bci_from_bcp(entry), type);
   }
 
-  sites_.for_each([&](uint8* site, Set<TypeVariable*>& results) {
+  output_.for_each([&](uint8* site, Set<TypeVariable*>& output) {
     type.clear(words_per_type());
-    for (auto it = results.begin(); it != results.end(); it++) {
+    for (auto it = output.begin(); it != output.end(); it++) {
       type.add_all_also_blocks((*it)->type(), words_per_type());
     }
     int position = program()->absolute_bci_from_bcp(site);
-    types->add_usage(position, type);
+    types->add_output(position, type);
+  });
+
+  input_.for_each([&](uint8* site, std::vector<TypeVariable*>& variables) {
+    int position = program()->absolute_bci_from_bcp(site);
+    for (unsigned i = 0; i < variables.size(); i++) {
+      types->add_input(position, i, variables.size(), variables[i]->type());
+    }
   });
 
   // Group the methods and blocks based on the bytecode position, so
@@ -400,45 +407,65 @@ void TypePropagator::call_method(MethodTemplate* caller,
 void TypePropagator::call_static(MethodTemplate* caller, TypeScope* scope, uint8* site, Method target) {
   TypeStack* stack = scope->top();
   int arity = target.arity();
+  if (site) add_input(site, stack, arity);
 
   std::vector<ConcreteType> arguments;
   stack->push_empty();
 
-  bool is_static = true;
   int offset = target.selector_offset();
+  bool handle_as_static = (offset == -1);
   if (offset >= 0) {
+    ASSERT(arity > 0);
     TypeSet receiver = stack->local(arity);
     // If the receiver is a single type, we don't need
     // to do virtual lookups. This allows us to handle
     // super calls where we cannot find the (virtual)
     // super method in the dispatch table entries for
     // the receiver because they have been overridden.
-    is_static = receiver.size(words_per_type_) <= 1;
+    handle_as_static = receiver.size(words_per_type_) <= 1;
   }
 
-  if (is_static) {
+  if (handle_as_static) {
     call_method(caller, scope, site, target, arguments);
   } else {
+    // We're handling this as a call to a virtual method,
+    // but if the offset is negative it indirectly encodes
+    // the range of classes that inherit the method from
+    // the holder class. We can find the class id limits
+    // for the range in the class check table.
+    Program* program = this->program();
+    unsigned limit_lower = 0;
+    unsigned limit_upper = 0;
+    if (offset < 0) {
+      ASSERT(offset <= -2);
+      int index = -(offset + 2);
+      limit_lower = program->class_check_ids[2 * index];
+      limit_upper = program->class_check_ids[2 * index + 1];
+    }
     // Run over all receiver type variants like we do for
     // virtual calls. If and only if the target method
     // can be looked up on the receiver we analyze the case.
     // Otherwise, we ignore it and avoid marking this as
     // a possible lookup error, because we trust the compiler
     // to be right about the types.
-    Program* program = this->program();
     TypeSet receiver = stack->local(arity);
     TypeSet::Iterator it(receiver, words_per_type_);
     while (it.has_next()) {
       unsigned id = it.next();
-      int entry_index = id + offset;
-      int entry_id = program->dispatch_table[entry_index];
-      // If the type propagator knows less about the types we
-      // can encounter than the compiler, we risk loading
-      // from areas of the dispatch table the compiler didn't
-      // anticipate. Guard against that.
-      if (entry_id < 0) continue;
-      Method entry = Method(program->bytecodes, entry_id);
-      if (entry.header_bcp() != target.header_bcp()) continue;
+      if (offset >= 0) {
+        int entry_index = id + offset;
+        int entry_id = program->dispatch_table[entry_index];
+        // If the type propagator knows less about the types we
+        // can encounter than the compiler, we risk loading
+        // from areas of the dispatch table the compiler didn't
+        // anticipate. Guard against that.
+        if (entry_id < 0) continue;
+        Method entry = Method(program->bytecodes, entry_id);
+        if (entry.header_bcp() != target.header_bcp()) continue;
+      } else if (id < limit_lower || id >= limit_upper) {
+        // Skip ids that are outside the limits.
+        continue;
+      }
       arguments.push_back(ConcreteType(id));
       call_method(caller, scope, site, target, arguments);
       arguments.pop_back();
@@ -451,6 +478,7 @@ void TypePropagator::call_static(MethodTemplate* caller, TypeScope* scope, uint8
 void TypePropagator::call_virtual(MethodTemplate* caller, TypeScope* scope, uint8* site, int arity, int offset) {
   TypeStack* stack = scope->top();
   TypeSet receiver = stack->local(arity - 1);
+  if (site) add_input(site, stack, arity);
 
   std::vector<ConcreteType> arguments;
   stack->push_empty();
@@ -482,6 +510,7 @@ void TypePropagator::call_block(TypeScope* scope, uint8* site, int arity) {
   TypeStack* stack = scope->top();
   TypeSet receiver = stack->local(arity - 1);
   BlockTemplate* block = receiver.block();
+  if (site) add_input(site, stack, arity);
 
   // If we're passing too few arguments to the block, this will
   // throw so we do not need to update the block's argument types.
@@ -549,8 +578,9 @@ void TypePropagator::load_lambda(TypeScope* scope, Method method) {
 
 void TypePropagator::load_field(MethodTemplate* user, TypeStack* stack, uint8* site, int index) {
   TypeSet instance = stack->local(0);
-  stack->push_empty();
+  if (site) add_input(site, stack, 1);
 
+  stack->push_empty();
   TypeSet::Iterator it(instance, words_per_type_);
   while (it.has_next()) {
     unsigned id = it.next();
@@ -584,7 +614,7 @@ void TypePropagator::load_outer(TypeScope* scope, uint8* site, int index) {
   // this particular access site. We use this merged type exclusively
   // for the output of the type propagator, so we don't actually
   // use the merged type anywhere in the analysis.
-  TypeVariable* merged = this->outer(site);
+  TypeVariable* merged = this->output(site);
   merged->type().add_all_also_blocks(value, words_per_type());
 }
 
@@ -604,7 +634,7 @@ bool TypePropagator::handle_typecheck_result(TypeScope* scope, uint8* site, bool
       scope->throw_maybe();
     }
   }
-  outer(site)->type().add_all(stack->local(0), words_per_type());
+  output(site)->type().add_all(stack->local(0), words_per_type());
   if (as_check) stack->pop();
   return can_succeed;
 }
@@ -638,13 +668,13 @@ TypeVariable* TypePropagator::global_variable(int index) {
   }
 }
 
-TypeVariable* TypePropagator::outer(uint8* site) {
+TypeVariable* TypePropagator::output(uint8* site) {
   auto it = outers_.find(site);
   if (it == outers_.end()) {
-    TypeVariable* variable = new TypeVariable(words_per_type());
-    outers_[site] = variable;
-    add_site(site, variable);
-    return variable;
+    TypeVariable* output = new TypeVariable(words_per_type());
+    outers_[site] = output;
+    add_output(site, output);
+    return output;
   } else {
     return it->second;
   }
@@ -656,8 +686,29 @@ void TypePropagator::enqueue(MethodTemplate* method) {
   enqueued_.push_back(method);
 }
 
-void TypePropagator::add_site(uint8* site, TypeVariable* result) {
-  sites_[site].insert(result);
+void TypePropagator::add_input(uint8* site, TypeStack* input, int n) {
+  auto probe = input_.find(site);
+  if (probe != input_.end()) {
+    std::vector<TypeVariable*>& variables = probe->second;
+    ASSERT(variables.size() == n);
+    for (int i = 0; i < n; i++) {
+      TypeVariable* variable = variables[i];
+      variable->type().add_all_also_blocks(input->local(n - i - 1), words_per_type());
+    }
+    return;
+  }
+
+  std::vector<TypeVariable*> variables;
+  for (int i = 0; i < n; i++) {
+    TypeVariable* variable = new TypeVariable(words_per_type());
+    variable->type().add_all_also_blocks(input->local(n - i - 1), words_per_type());
+    variables.push_back(variable);
+  }
+  input_[site] = variables;
+}
+
+void TypePropagator::add_output(uint8* site, TypeVariable* output) {
+  output_[site].insert(output);
 }
 
 MethodTemplate* TypePropagator::find_method(Method target, std::vector<ConcreteType> arguments) {

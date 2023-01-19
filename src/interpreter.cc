@@ -114,6 +114,7 @@ Object** Interpreter::gc(Object** sp, bool malloc_failed, int attempts, bool for
   ASSERT(attempts >= 1 && attempts <= 3);  // Allocation attempts.
   if (attempts == 3) {
     OS::heap_summary_report(0, "out of memory");
+
     if (VM::current()->scheduler()->is_boot_process(process_)) {
       OS::out_of_memory("Out of memory in system process");
     }
@@ -262,6 +263,7 @@ Object** Interpreter::handle_stack_overflow(Object** sp, OverflowState* state, M
 #endif
     sp = gc(sp, false, attempts, false);
     new_stack = process->object_heap()->allocate_stack(new_length);
+    printf("MID: %d: %d %s\n",attempts, new_length, new_stack?"succeeded":"failed");
   }
 
   // Then check for out of memory.

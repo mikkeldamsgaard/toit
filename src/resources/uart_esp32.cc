@@ -127,7 +127,7 @@ PRIMITIVE(create) {
   if (data_bits < 5 || data_bits > 8) INVALID_ARGUMENT;
   if (stop_bits < 1 || stop_bits > 3) INVALID_ARGUMENT;
   if (parity < 1 || parity > 3) INVALID_ARGUMENT;
-  if (options < 0 || options > 3) INVALID_ARGUMENT;
+  if (options < 0 || options > 15) INVALID_ARGUMENT;
   if (mode < UART_MODE_UART || mode > UART_MODE_IRDA) INVALID_ARGUMENT;
   if (mode == UART_MODE_RS485_HALF_DUPLEX && cts != -1) INVALID_ARGUMENT;
 
@@ -198,26 +198,24 @@ PRIMITIVE(create) {
     QueueHandle_t queue;
     int options;
     esp_err_t err;
-    int interrupt_flags;
   } args;
-
 
   if (err == ESP_OK) {
     args.options = options;
-    args.interrupt_flags = 0;
-#ifdef CONFIG_UART_ISR_IN_IRAM
-    args.interrupt_flags |= ESP_INTR_FLAG_IRAM;
-#endif
-    if (baud_rate >= 460800) {
-      args.interrupt_flags |= ESP_INTR_FLAG_LEVEL3 | ESP_INTR_FLAG_SHARED;
-    } else {
-      args.interrupt_flags |= ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_LEVEL2 | ESP_INTR_FLAG_SHARED;
-    }
-
     SystemEventSource::instance()->run([&]() -> void {
       int buffer_size = 2 * 1024;
       // Initialize using default priority.
-      args.err = uart_driver_install(port, buffer_size, buffer_size, 32, &args.queue, args.interrupt_flags);
+      int interrupt_flags = ESP_INTR_FLAG_IRAM;
+      if ((args.options & 8) != 0) {
+        // High speed setting.
+        interrupt_flags |= ESP_INTR_FLAG_LEVEL3;
+      } else if ((args.options & 4) != 0) {
+        interrupt_flags |= ESP_INTR_FLAG_LEVEL2 | ESP_INTR_FLAG_LEVEL3;
+      } else {
+        // Low speed setting.
+        interrupt_flags |= ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_LEVEL2 | ESP_INTR_FLAG_LEVEL3;
+      }
+      args.err = uart_driver_install(port, buffer_size, buffer_size, 32, &args.queue, interrupt_flags);
       if (args.err == ESP_OK) {
         int flags = 0;
         if ((args.options & 1) != 0) flags |= UART_SIGNAL_TXD_INV;
@@ -355,7 +353,7 @@ PRIMITIVE(read) {
   if (err != ESP_OK) {
     return Primitive::os_error(err, process);
   }
-  //printf("<<%i ",available);
+
   ByteArray* data = process->allocate_byte_array(available, /*force_external*/ available != 0);
   if (data == null) ALLOCATION_FAILED;
 
