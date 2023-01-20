@@ -15,7 +15,7 @@
 
 #include "../top.h"
 
-#if defined(TOIT_FREERTOS) && CONFIG_BT_ENABLED
+#if defined(TOIT_FREERTOS) && CONFIG_BT_ENABLED && CONFIG_BT_NIMBLE_ENABLED
 
 #include "../resource.h"
 #include "../objects_inline.h"
