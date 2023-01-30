@@ -436,6 +436,12 @@ bool Scheduler::kill(const Program* program) {
   return false;
 }
 
+void Scheduler::external_gc() {
+  if (boot_process_ != null) {
+    gc(boot_process_, true, true);
+  }
+}
+
 void Scheduler::gc(Process* process, bool malloc_failed, bool try_hard) {
   bool doing_idle_process_gc = try_hard || malloc_failed || (process && process->system_refused_memory());
   bool doing_cross_process_gc = false;

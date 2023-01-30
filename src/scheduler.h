@@ -138,6 +138,7 @@ class Scheduler {
   // Collects garbage from the given process or some of the non-running
   // processes in the system.
   void gc(Process* process, bool malloc_failed, bool try_hard);
+  void external_gc();
 
   // Profiler support.
   void activate_profiler(Process* process) { notify_profiler(1); }

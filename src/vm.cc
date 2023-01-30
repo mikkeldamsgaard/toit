@@ -26,6 +26,18 @@
 #include "scheduler.h"
 #include "vm.h"
 
+extern "C" {
+  void toit_gc() {
+    toit::VM* vm = toit::VM::current();
+    if (vm != null) {
+      toit::Scheduler* scheduler = vm->scheduler();
+      if (scheduler != null) {
+        scheduler->external_gc();
+      }
+    }
+  }
+}
+
 namespace toit {
 
 class NopEventSource : public EventSource {
