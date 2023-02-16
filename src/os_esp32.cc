@@ -457,7 +457,10 @@ OS::HeapMemoryRange OS::get_heap_memory_range() {
   HeapMemoryRange range;
 #ifdef CONFIG_IDF_TARGET_ESP32S3
   range.address = reinterpret_cast<void*>(0x3ffa0000);
-  range.size = 512 * KB;
+  range.size = 512 * KB
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)
+    range.address = reinterpret_cast<void*>(SOC_BYTE_ACCESSIBLE_LOW);
+    range.size = (SOC_BYTE_ACCESSIBLE_HIGH-SOC_BYTE_ACCESSIBLE_LOW);
 #else
   //                           DRAM range            IRAM range
   // Internal SRAM 2 200k 3ffa_e000 - 3ffe_0000
