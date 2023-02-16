@@ -15,7 +15,7 @@
 
 #include "top.h"
 
-#if !defined(TOIT_FREERTOS) || CONFIG_TOIT_CRYPTO
+#if !defined(TOIT_FREERTOS) || defined(CONFIG_TOIT_CRYPTO)
 
 #include "mbedtls/gcm.h"
 #include "mbedtls/chachapoly.h"
@@ -31,7 +31,6 @@
 #include "sha.h"
 #include "siphash.h"
 #include "tags.h"
-
 
 namespace toit {
 
@@ -537,6 +536,6 @@ PRIMITIVE(aes_ecb_close) {
   return process->program()->null_object();
 }
 
-
 }
-#endif // !defined(TOIT_FREERTOS) || CONFIG_TOIT_CRYPTO
+
+#endif

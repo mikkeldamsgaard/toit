@@ -816,7 +816,6 @@ void BleRemoteDeviceResource::_on_event(ble_gap_event* event) {
       if (event->connect.status == 0) {
         ASSERT(handle() == kInvalidHandle)
         set_handle(event->connect.conn_handle);
-        BleEventSource::instance()->on_event(this, kBleConnected);
         // TODO(mikkel): Expose this as a primitive.
         ble_gattc_exchange_mtu(event->connect.conn_handle, null, null);
       } else {
@@ -843,6 +842,9 @@ void BleRemoteDeviceResource::_on_event(ble_gap_event* event) {
           }
         }
       }
+      break;
+    case BLE_GAP_EVENT_MTU:
+      BleEventSource::instance()->on_event(this, kBleConnected);
       break;
   }
 }
@@ -1167,6 +1169,9 @@ PRIMITIVE(init) {
   
   ble_hs_cfg.sync_cb = ble_on_sync;
 
+  // It is important to call nimble_port_init before creating the resource group, as the
+  // resource group constructor starts the nimble background thread that uses
+  // structures initialize by the init function.
   nimble_port_init();
 
   auto group = _new BleResourceGroup(process, ble, id, mutex);
@@ -1177,7 +1182,6 @@ PRIMITIVE(init) {
     nimble_port_deinit();
     MALLOC_FAILED;
   }
-
 
   proxy->set_external_address(group);
   return proxy;
