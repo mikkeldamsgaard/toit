@@ -434,7 +434,14 @@ OS::HeapMemoryRange OS::get_heap_memory_range() {
 
   if (has_spiram) {
     use_spiram_for_metadata_ = true;
-    printf("[toit] INFO: using SPIRAM for heap metadata.\n");
+    if (use_spiram_for_heap_) {
+      printf("[toit] INFO: using SPIRAM for heap and for heap metadata.\n");
+    } else {
+      printf("[toit] INFO: using SPIRAM for heap metadata.\n");
+    }
+  } else {
+    use_spiram_for_heap_ = false;
+    use_spiram_for_metadata_ = false;
   }
 
   // Older esp-idfs or mallocs other than cmpctmalloc won't set the
