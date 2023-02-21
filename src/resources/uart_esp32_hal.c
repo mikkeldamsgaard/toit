@@ -91,12 +91,16 @@ void uart_toit_hal_set_rx_timeout(uart_hal_handle_t hal, uint8_t timeout) {
 
 #if SOC_UART_REQUIRE_CORE_RESET
 void uart_toit_hal_set_reset_core(uart_hal_handle_t hal, bool reset) {
-  uart_hal_set_reset_core(hal, reset);
+  uart_hal_set_reset_core(HAL, reset);
 }
 #endif // SOC_UART_REQUIRE_CORE_RESET
 
 void uart_toit_hal_rxfifo_rst(uart_hal_handle_t hal) {
   uart_hal_rxfifo_rst(HAL);
+}
+
+void uart_toit_hal_txfifo_rst(uart_hal_handle_t hal) {
+  uart_hal_txfifo_rst(HAL);
 }
 
 void IRAM_ATTR uart_toit_hal_tx_break(uart_hal_handle_t hal, uint32_t break_num) {

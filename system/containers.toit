@@ -158,19 +158,14 @@ class ContainerImageFlash extends ContainerImage:
 
   stop_all -> none:
     attempts := 0
-    print "in_stop_all.1"
     while container_is_running_ allocation_.offset allocation_.size:
-      print "in_stop_all.2"
       result := container_kill_flash_image_ allocation_.offset allocation_.size
       if result: attempts++
       sleep --ms=10
-    print "in_stop_all.3"
     manager.on_image_stop_all_ this
 
   delete -> none:
-    print "stop_all"
     stop_all
-    print "stop_all.1"
     // TODO(kasper): We clear the allocation field, so maybe we should check for
     // null in the methods that use the field?
     allocation := allocation_
