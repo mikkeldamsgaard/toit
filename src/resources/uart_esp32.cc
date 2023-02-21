@@ -555,7 +555,7 @@ uint32_t UartResourceGroup::on_event(Resource* r, word data, uint32_t state) {
 
     case UART_BUFFER_FULL:
       state |= kErrorState;
-      printf("Uart buffer full");
+      printf("[warn] Uart receive buffer full\n");
       break;
 
     default:
