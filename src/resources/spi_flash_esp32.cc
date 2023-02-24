@@ -219,14 +219,23 @@ PRIMITIVE(init_nand_flash) {
   if (!proxy) return error;
 
   spi_device_interface_config_t dev_cfg = {
+      .command_bits = 0,
+      .address_bits = 0,
+      .dummy_bits = 0,
       .mode = 0,
+      .duty_cycle_pos = 0,
+      .cs_ena_pretrans = 0,
+      .cs_ena_posttrans = 0,
       .clock_speed_hz = frequency,
+      .input_delay_ns = 0,
       .spics_io_num = gpio_cs,
       .flags = SPI_DEVICE_HALFDUPLEX,
-      .queue_size = 1
+      .queue_size = 1,
+      .pre_cb = null,
+      .post_cb = null
   };
   spi_device_handle_t nand_spi_device;
-  esp_err_t ret = spi_bus_add_device(SPI3_HOST, &dev_cfg, &nand_spi_device);
+  esp_err_t ret = spi_bus_add_device(spi_bus->host_device(), &dev_cfg, &nand_spi_device);
   if (ret != ESP_OK) {
     group->tear_down();
     return Primitive::os_error(ret, process);
