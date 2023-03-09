@@ -53,10 +53,6 @@ monitor ResourceState_:
   wait_for_state_ bits:
     result := state_ & bits
     if not resource_: return 0
-    if result != 0:
-      // For cooporation, any resource that already has its state satisfied yields.
-      yield
-      return result
     await:
       result = state_ & bits
       // Check if we got some of the right bits or if the resource

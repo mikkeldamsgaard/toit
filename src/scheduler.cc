@@ -438,6 +438,7 @@ bool Scheduler::kill(const Program* program) {
 
 void Scheduler::external_gc() {
   if (boot_process_ != null) {
+    Thread::ensure_system_thread();
     gc(boot_process_, true, true);
   }
 }
@@ -947,6 +948,7 @@ void Scheduler::iterate_process_chunks(void* context, process_chunk_callback_t* 
   for (ProcessGroup* group : groups_) {
     ProcessListFromProcessGroup& processes = group->processes();
     for (auto it : processes) {
+      if (it->program() == null) continue;  // External process.
       it->object_heap()->iterate_chunks(context, callback);
     }
   }

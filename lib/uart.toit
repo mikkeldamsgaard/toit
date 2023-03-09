@@ -95,6 +95,8 @@ class Port implements reader.Reader:
     if high_priority == null: high_priority = baud_rate >= 460800
     if high_priority:
       tx_flags |= 8
+    if not high_priority and baud_rate >= 115200:
+      tx_flags |= 4
     uart_ = uart_create_
       resource_group_
       tx ? tx.num : -1
@@ -233,7 +235,10 @@ class Port implements reader.Reader:
 
   write_no_wait_ data from=0 to=data.size --break_length=0:
     while true:
-      s := state_.wait_for_state WRITE_STATE_ | ERROR_STATE_
+//      print "Wait for write_state $(to-from)"
+      s := state_.wait_for_state WRITE_STATE_
+//      print "got it $(to-from)"
+
       if not uart_: throw "CLOSED"
       written := uart_write_ uart_ data from to break_length
       if written < to - from:

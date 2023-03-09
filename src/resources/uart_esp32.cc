@@ -224,6 +224,9 @@ public:
   uart_event_types_t interrupt_handler_write();
   uart_event_types_t interrupt_handler_read();
 
+  void clear_data_event_in_queue();
+  void clear_tx_event_in_queue();
+
  private:
   void UART_ISR_INLINE disable_interrupt_mask_(uint32_t mask)  {
     uart_toit_hal_disable_intr_mask(hal_, mask);
@@ -238,6 +241,10 @@ public:
   RxBuffer rx_buffer_;
   TxBuffer tx_buffer_;
   intr_handle_t interrupt_handle_ = null;
+  bool data_event_in_queue_ = false;
+  bool tx_event_in_queue_ = false;
+
+  void send_event_to_queue(uart_event_types_t event, int* hp_task_awoken);
 };
 
 
@@ -277,6 +284,7 @@ void TxBuffer::write(const uint8_t* buffer, uint16_t length, uint8_t break_lengt
       abort();
     }
   }
+
   uart()->enable_interrupt_index(UART_TOIT_INTR_TXFIFO_EMPTY);
 }
 
@@ -469,10 +477,6 @@ UART_ISR_INLINE uart_event_types_t UartResource::interrupt_handler_read() {
     uint8_t buffer[read_length];
     uart_toit_hal_read_rxfifo(hal_, buffer, reinterpret_cast<int*>(&read_length));
     rx_buffer().send(buffer, read_length);
-//    esp_rom_printf("R: (%d) ", read_length);
-//    for (int i=0;i<read_length;i++) esp_rom_printf("%02x ",buffer[i]);
-//    esp_rom_printf("\n");
-
     return UART_DATA;
   }
 }
@@ -484,17 +488,13 @@ UART_ISR_INLINE uart_event_types_t UartResource::interrupt_handler_write() {
   if (buffer) {
     uint32_t written;
     uart_toit_hal_write_txfifo(hal_, buffer, received_count, &written); // TODO: Is the RS485 workaround necessary here?
-//    esp_rom_printf("W: (%d) ", tx_fifo_free);
-//    for (int i=0;i<received_count;i++) esp_rom_printf("%02x ",buffer[i]);
-//    esp_rom_printf("\n");
     tx_buffer().return_buffer(buffer);
-
     return UART_TX_EVENT;
   } else {
     int break_number = tx_buffer().read_break();
     if (break_number != 0) {
-      uart_toit_hal_tx_break(hal_, break_number);
       enable_interrupt_index_isr(UART_TOIT_INTR_TX_BRK_DONE);
+      uart_toit_hal_tx_break(hal_, break_number);
       disable_interrupt_index_isr(UART_TOIT_INTR_TXFIFO_EMPTY);
     } else if (tx_buffer().is_empty()) {
       disable_interrupt_index_isr(UART_TOIT_INTR_TXFIFO_EMPTY);
@@ -525,7 +525,7 @@ IRAM_ATTR void UartResource::interrupt_handler(void* arg) {
     event = uart->interrupt_handler_read();
   } else if (uart_interrupt_status & uart->interrupt_mask(UART_TOIT_INTR_RXFIFO_OVF)) {
     uart->clear_interrupt_index(UART_TOIT_INTR_RXFIFO_OVF);
-    uart->disable_read_interrupts();
+    uart->clear_rx_fifo();
     event = UART_FIFO_OVF;
   } else {
     uart->clear_interrupt_mask(uart_interrupt_status);
@@ -533,9 +533,38 @@ IRAM_ATTR void UartResource::interrupt_handler(void* arg) {
 
   if (event != UART_EVENT_MAX) {
     portBASE_TYPE hp_task_awoken = 0;
-    xQueueSendToBackFromISR(uart->queue(), &event, &hp_task_awoken);
+    uart->send_event_to_queue(event, &hp_task_awoken);
     if (hp_task_awoken) portYIELD_FROM_ISR();
   }
+}
+
+UART_ISR_INLINE void UartResource::send_event_to_queue(uart_event_types_t event, int* hp_task_awoken) {
+  IsrSpinLocker locker(&spinlock_);
+  // Data and Tx Event receive special care, as to not overflow the queue
+  if (event == UART_DATA) {
+    if (data_event_in_queue_) return;
+    data_event_in_queue_ = true;
+  }
+
+  if (event == UART_TX_EVENT) {
+    if (tx_event_in_queue_) return;
+    tx_event_in_queue_ = true;
+  }
+
+  if (xQueueSendToBackFromISR(queue(), &event, hp_task_awoken) != pdTRUE) {
+    esp_rom_printf("[uart] warning: event queue is full\n");
+  }
+
+}
+
+void UartResource::clear_data_event_in_queue() {
+  SpinLocker locker(&spinlock_);
+  data_event_in_queue_ = false;
+}
+
+void UartResource::clear_tx_event_in_queue() {
+  SpinLocker locker(&spinlock_);
+  tx_event_in_queue_ = false;
 }
 
 
@@ -543,6 +572,7 @@ uint32_t UartResourceGroup::on_event(Resource* r, word data, uint32_t state) {
   switch (data) {
     case UART_DATA:
       state |= kReadState;
+      reinterpret_cast<UartResource*>(r)->clear_data_event_in_queue();
       break;
 
     case UART_BREAK:
@@ -551,11 +581,17 @@ uint32_t UartResourceGroup::on_event(Resource* r, word data, uint32_t state) {
 
     case UART_TX_EVENT:
       state |= kWriteState;
+      reinterpret_cast<UartResource*>(r)->clear_tx_event_in_queue();
       break;
 
     case UART_BUFFER_FULL:
       state |= kErrorState;
-      printf("[warn] Uart receive buffer full\n");
+      esp_rom_printf("[warn] Uart receive buffer full\n");
+      break;
+
+    case UART_FIFO_OVF:
+      state |= kErrorState;
+      esp_rom_printf("[warn] Uart fifo overflow\n");
       break;
 
     default:
@@ -641,21 +677,21 @@ PRIMITIVE(create) {
   if ((options & 8) != 0) {
     // High speed setting.
     interrupt_flags |= ESP_INTR_FLAG_LEVEL3;
-    full_interrupt_threshold = 80;
+    full_interrupt_threshold = 35;
     tx_buffer_size = 1024;
     rx_buffer_size = 2048;
   } else if ((options & 4) != 0) {
     // Medium speed
     interrupt_flags |= ESP_INTR_FLAG_LEVEL2 | ESP_INTR_FLAG_LEVEL3;
-    full_interrupt_threshold = 100;
+    full_interrupt_threshold = 92;
     tx_buffer_size = 512;
-    rx_buffer_size = 1024;
+    rx_buffer_size = 1536;
   } else {
     // Low speed setting.
     interrupt_flags |= ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_LEVEL2 | ESP_INTR_FLAG_LEVEL3;
-    full_interrupt_threshold = 120;
+    full_interrupt_threshold = 105;
     tx_buffer_size = 256;
-    rx_buffer_size = 512;
+    rx_buffer_size = 768;
   }
 
   uart_initialization_record_t init = {};
@@ -841,9 +877,11 @@ PRIMITIVE(write) {
   if (break_length < 0 || break_length >= 256) OUT_OF_RANGE;
   int size = to - from;
 
-
   size_t available = uart->tx_buffer().free_size();
-  if (available < size) size = static_cast<int>(available);
+  if (available < size) {
+    size = static_cast<int>(available);
+    break_length = 0;
+  }
 
   if (size == 0) return Smi::from(0);
 

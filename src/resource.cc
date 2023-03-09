@@ -147,6 +147,7 @@ void EventSource::dispatch(Resource* r, word data) {
 }
 
 void EventSource::dispatch(const Locker& locker, Resource* r, word data) {
+  if (locker.mutex() != mutex_) fail("Wrong mutex");
   r->set_state(r->resource_group()->on_event(r, data, r->state()));
   try_notify(r, locker);
 }

@@ -244,10 +244,8 @@ class ConditionVariable {
 
 void Locker::leave() {
   Thread* thread = Thread::current();
-  if (thread != null) {
-    if (thread->locker_ != this) FATAL("unlocking would break lock order");
-    thread->locker_ = previous_;
-  }
+  if (thread->locker_ != this) FATAL("unlocking would break lock order");
+  thread->locker_ = previous_;
   // Perform the actual unlock.
   mutex_->unlock();
 }
@@ -255,26 +253,20 @@ void Locker::leave() {
 void Locker::enter() {
   Thread* thread = Thread::current();
   int level = mutex_->level();
-  // If there is no current thread, then we assume that it is an external
-  // task and do not do extensive checks
-  if (thread) {
-    Locker* previous_locker = thread->locker_;
-    if (previous_locker != null) {
-      int previous_level = previous_locker->mutex_->level();
-      if (level <= previous_level) {
-        FATAL("trying to take lock of level %d while holding lock of level %d", level, previous_level);
-      }
+  Locker* previous_locker = thread->locker_;
+  if (previous_locker != null) {
+    int previous_level = previous_locker->mutex_->level();
+    if (level <= previous_level) {
+      FATAL("trying to take lock of level %d while holding lock of level %d", level, previous_level);
     }
-    // Lock after checking the precondition to avoid deadlocking
-    // instead of just failing the precondition check.
-    mutex_->lock();
-    // Only update variables after we have the lock - that grants right
-    // to update the locker.
-    previous_ = thread->locker_;
-    thread->locker_ = this;
-  } else {
-    mutex_->lock();
   }
+  // Lock after checking the precondition to avoid deadlocking
+  // instead of just failing the precondition check.
+  mutex_->lock();
+  // Only update variables after we have the lock - that grants right
+  // to update the locker.
+  previous_ = thread->locker_;
+  thread->locker_ = this;
 }
 
 const int DEFAULT_STACK_SIZE = 2 * KB;
@@ -372,6 +364,7 @@ void Thread::ensure_system_thread() {
 
 Thread* Thread::current() {
   Thread* result = current_thread_;
+  if (result == null) FATAL("thread must be present");
   return result;
 }
 

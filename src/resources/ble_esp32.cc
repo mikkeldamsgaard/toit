@@ -921,6 +921,7 @@ int BleReadWriteElement::_on_access(ble_gatt_access_ctxt* ctxt) {
     case BLE_GATT_ACCESS_OP_READ_CHR:
     case BLE_GATT_ACCESS_OP_READ_DSC:
       if (mbuf_to_send() != null) {
+
         return os_mbuf_appendfrom(ctxt->om, mbuf_to_send(), 0, mbuf_to_send()->om_len);
       }
       break;

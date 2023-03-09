@@ -34,7 +34,7 @@ class Locker {
   ~Locker() {
     leave();
   }
-
+ Mutex* mutex() const { return mutex_; }
  private:
   // Explicitly leave the locker, while in the scope. Must be re-entered by
   // calling `enter`.
