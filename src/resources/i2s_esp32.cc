@@ -72,26 +72,38 @@ class I2sResourceGroup : public ResourceGroup {
 class I2sResource: public EventQueueResource {
  public:
   TAG(I2sResource);
-  I2sResource(I2sResourceGroup* group, i2s_port_t port, int max_read_buffer_size, QueueHandle_t queue)
+  I2sResource(I2sResourceGroup* group, i2s_port_t port, int max_frames_per_read, int word_size, QueueHandle_t queue)
     : EventQueueResource(group, queue)
     , port_(port)
-    , max_read_buffer_size_(max_read_buffer_size) {}
+    , max_frames_per_read_(max_frames_per_read)
+    , word_size_(word_size) {}
 
   ~I2sResource() override {
     SystemEventSource::instance()->run([&]() -> void {
       FATAL_IF_NOT_ESP_OK(i2s_driver_uninstall(port_));
     });
+    free(write_buffer_);
     i2s_ports.put(port_);
   }
 
   i2s_port_t port() const { return port_; }
-  int max_read_buffer_size() const { return max_read_buffer_size_; }
-
+  int max_frames_per_read() const { return max_frames_per_read_; }
+  int word_size() const { return word_size_; }
+  int bytes_per_sample() const { return word_size_ <= 2 ? 2 : 4; }
   bool receive_event(word* data) override;
+
+  void set_write_buffer(uint8* write_buffer) { write_buffer_ = write_buffer; }
+  uint8* write_buffer() const { return write_buffer_; }
+
+  void set_write_position(uword write_position) { write_position_ = write_position; }
+  uword write_position() const { return write_position_; }
 
  private:
   i2s_port_t port_;
-  int max_read_buffer_size_;
+  int max_frames_per_read_;
+  int word_size_;
+  uint8* write_buffer_ = null;
+  uword write_position_ = 0;
 };
 
 bool I2sResource::receive_event(word* data) {
@@ -157,6 +169,10 @@ PRIMITIVE(create) {
     mode |= I2S_MODE_RX;
   }
 
+  int word_size = bits_per_sample / 8;
+  int number_of_dma_buffers = 4;
+  int frames_per_dma_buffer = (buffer_size + number_of_dma_buffers -1 ) / number_of_dma_buffers;
+
   i2s_config_t config = {
     .mode = static_cast<i2s_mode_t>(mode),
     .sample_rate = sample_rate,
@@ -164,8 +180,8 @@ PRIMITIVE(create) {
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     .intr_alloc_flags = 0, // default interrupt priority
-    .dma_buf_count = 4,
-    .dma_buf_len = buffer_size / 4,
+    .dma_buf_count = number_of_dma_buffers,
+    .dma_buf_len = frames_per_dma_buffer * word_size,
     .use_apll = use_apll,
     .tx_desc_auto_clear = false,
     .fixed_mclk = static_cast<int>(fixed_mclk),
@@ -216,7 +232,8 @@ PRIMITIVE(create) {
     return Primitive::os_error(err, process);
   }
 
-  I2sResource* i2s = _new I2sResource(group, port, buffer_size, args.queue);
+  I2sResource* i2s = _new I2sResource(group, port, frames_per_dma_buffer * number_of_dma_buffers,
+                                      word_size,  args.queue);
   if (!i2s) {
     SystemEventSource::instance()->run([&]() -> void {
       i2s_driver_uninstall(port);
@@ -238,45 +255,110 @@ PRIMITIVE(close) {
   return process->program()->null_object();
 }
 
+// This write is a bit unusual in the sense that it has a state between calls. This is to
+// make sure that we do not do misaligned writes. The corresponding toit method should have a mutex
+// to guard against concurrent invocations.
 PRIMITIVE(write) {
-  ARGS(I2sResource, i2s, Blob, buffer);
+  ARGS(I2sResource, i2s, Array, array);
+  if (!i2s->write_buffer()) {
+    auto write_buffer = static_cast<uint8*>(malloc(i2s->bytes_per_sample() * array->length()));
+    if (!write_buffer) MALLOC_FAILED;
+    i2s->set_write_buffer(write_buffer);
+    i2s->set_write_position(0);
 
-  size_t written = 0;
-  esp_err_t err = i2s_write(i2s->port(), buffer.address(), buffer.length(), &written, 0);
+    // Pack the samples in the array to the correct bit width
+    int shift = 0;
+    switch (i2s->word_size()) {
+      case 1:
+        shift = 8;
+        /* FALL THROUGH */
+      case 2:
+        for (int i = 0; i < array->length(); i++) {
+          *(((int16*)write_buffer) + i) = (int16)(Smi::cast(array->at(i))->value() << shift);
+        }
+        break;
+      case 3:
+        shift = 8;
+        /* FALL THROUGH */
+      case 4:
+        for (int i = 0; i < array->length(); i++) {
+          *(((int32*)write_buffer) + i) = (int32)(Smi::cast(array->at(i))->value() << shift);
+        }
+        break;
+    }
+  }
+
+  uword written = 0;
+  esp_err_t err = i2s_write(i2s->port(), i2s->write_buffer() + i2s->write_position(),
+                            array->length() * i2s->bytes_per_sample() - i2s->write_position(), &written, 0);
+
   if (err != ESP_OK) {
+    free(i2s->write_buffer());
+    i2s->set_write_buffer(null);
     return Primitive::os_error(err, process);
   }
 
-  return Smi::from(static_cast<word>(written));
+  i2s->set_write_position(written + i2s->write_position());
+
+  if (i2s->write_position() == array->length() * i2s->bytes_per_sample()) {
+    free(i2s->write_buffer());
+    i2s->set_write_buffer(null);
+    return BOOL(true);
+  } else {
+    return BOOL(false);
+  }
 }
 
 PRIMITIVE(read) {
   ARGS(I2sResource, i2s);
 
-  ByteArray* data = process->allocate_byte_array(i2s->max_read_buffer_size(), /*force_external*/ true);
-  if (data == null) ALLOCATION_FAILED;
+  Array* array = process->object_heap()->allocate_array(i2s->max_frames_per_read() * 2,
+                                                        process->program()->null_object());
+  if (!array) ALLOCATION_FAILED;
 
-  ByteArray::Bytes rx(data);
-  size_t read = 0;
-  esp_err_t err = i2s_read(i2s->port(), rx.address(), rx.length(), &read, 0);
+  Array* result = process->object_heap()->allocate_array(2, process->program()->null_object());
+  if (!result) ALLOCATION_FAILED;
+
+  result->at_put(0, array);
+
+  int buffer_len = i2s->bytes_per_sample() * i2s->max_frames_per_read() * 2;
+  void* buffer = malloc(buffer_len);
+  if (!buffer) MALLOC_FAILED;
+
+  uword read = 0;
+  esp_err_t err = i2s_read(i2s->port(), buffer, buffer_len, &read, 0);
   if (err != ESP_OK) {
+    free(buffer);
     return Primitive::os_error(err, process);
   }
 
-  data->resize_external(process, static_cast<word>(read));
-  return data;
-}
-
-PRIMITIVE(read_to_buffer) {
-  ARGS(I2sResource, i2s, MutableBlob, buffer);
-
-  size_t read = 0;
-  esp_err_t err = i2s_read(i2s->port(), static_cast<void*>(buffer.address()), buffer.length(), &read, 0);
-  if (err != ESP_OK) {
-    return Primitive::os_error(err, process);
+  if (read % (i2s->bytes_per_sample() * 2) != 0) {
+    fail("Broken I2S read");
   }
 
-  return Smi::from(static_cast<word>(read));
+  uword samples = read / i2s->bytes_per_sample();
+  result->at_put(1, Smi::from(static_cast<int>(samples)));
+
+  int shift = 0;
+  switch (i2s->word_size()) {
+    case 1:
+      shift = 8;
+      /* FALL THOUGH */
+    case 2:
+      for (int i = 0; i < samples; i++) {
+        array->at_put(i, Smi::from(*(((int16*)buffer)+i) >> shift));
+      }
+    case 3:
+      shift = 8;
+      /* FALL THOUGH */
+    case 4:
+      for (int i = 0; i < samples; i++) {
+        array->at_put(i, Smi::from(*(((int32*)buffer)+i) >> shift));
+      }
+  }
+  free(buffer);
+
+  return result;
 }
 
 } // namespace toit

@@ -3,7 +3,7 @@
 // found in the lib/LICENSE file.
 
 import gpio
-import monitor show ResourceState_
+import monitor
 
 import serial
 
@@ -16,6 +16,8 @@ The I2S Bus works closely with the underlying hardware units, which means that
 class Bus:
   i2s_ := ?
   state_/ResourceState_ ::= ?
+  write_mutex_ ::= monitor.Mutex
+
   /** Number of encountered errors. */
   errors := 0
 
@@ -24,7 +26,7 @@ class Bus:
 
   $sample_rate is the rate at which samples are written.
   $bits_per_sample is the width of each sample. It can be either 16, 24 or 32.
-  $buffer_size, in bytes, is used as size for internal buffers.
+  $buffer_size, in number of frames to use for internal buffer. One frame is a left and right sample
   $mclk is the pin used to output the master clock. Only relevant when the I2S
     Bus is operating in master mode.
   $mclk_multiplier is the muliplier of the $sample_rate to be used for the
@@ -46,7 +48,7 @@ class Bus:
       --is_master/bool=true
       --mclk_multiplier/int=256
       --use_apll/bool=false
-      --buffer_size/int=(32 * 2 * bits_per_sample / 8):
+      --buffer_size/int=32:
     sck_pin := sck ? sck.num : -1
     ws_pin := ws ? ws.num : -1
     tx_pin := tx ? tx.num : -1
@@ -57,32 +59,37 @@ class Bus:
 
 
   /**
-  Writes bytes to the I2S bus.
+  Writes samples to the I2S bus. The list should be interleaved with left then right samples. A sample is a
+    signed integer with a range corresponding to the bits_per_sample parameter.
 
-  This method blocks until some data has been written.
+  This method blocks until all samples have been written.
 
-  Returns the number of bytes written.
+  Returns the number of frames written.
   */
-  write bytes/ByteArray -> int:
-    while true:
-      written := i2s_write_ i2s_ bytes
-      if written != 0: return written
+  write samples/List -> int:
+    if samples.size % 2 != 0: throw "INVALID_ARGUMENT"
+    array := Array_.from samples
+    write_mutex_.do:
+      while true:
+        done := i2s_write_ i2s_ array
+        if done: return samples.size / 2
 
-      state_.clear_state WRITE_STATE_
-      state := state_.wait_for_state WRITE_STATE_ | ERROR_STATE_
+        state_.clear_state WRITE_STATE_
+        state := state_.wait_for_state WRITE_STATE_ | ERROR_STATE_
 
-      if not i2s_: throw "CLOSED"
+        if not i2s_: throw "CLOSED"
 
-      if state & ERROR_STATE_ != 0:
-        state_.clear_state ERROR_STATE_
-        errors++
+        if state & ERROR_STATE_ != 0:
+          state_.clear_state ERROR_STATE_
+          errors++
 
+    unreachable
   /**
-  Read bytes from the I2S bus.
+  Read samples from the I2S bus. The returned list contains samples as left then right interleaved.
 
   This methods blocks until data is available.
   */
-  read -> ByteArray?:
+  read -> List?:
     while true:
       state := state_.wait_for_state READ_STATE_ | ERROR_STATE_
       if state & ERROR_STATE_ != 0:
@@ -90,26 +97,8 @@ class Bus:
         errors++
       else if state & READ_STATE_ != 0:
         data := i2s_read_ i2s_
-        if data.size > 0: return data
-        state_.clear_state READ_STATE_
-      else:
-        // It was closed (disposed).
-        return null
-
-  /**
-  Read bytes from the I2S bus to a buffer.
-
-  This methods blocks until data is available.
-  */
-  read buffer/ByteArray -> int?:
-    while true:
-      state := state_.wait_for_state READ_STATE_ | ERROR_STATE_
-      if state & ERROR_STATE_ != 0:
-        state_.clear_state ERROR_STATE_
-        errors++
-      else if state & READ_STATE_ != 0:
-        read := i2s_read_to_buffer_ i2s_ buffer
-        if read > 0: return read
+        length := data[1]
+        if length > 0: return data[0][0..length]
         state_.clear_state READ_STATE_
       else:
         // It was closed (disposed).
@@ -131,7 +120,6 @@ READ_STATE_  ::= 1 << 0
 WRITE_STATE_ ::= 1 << 1
 ERROR_STATE_ ::= 1 << 2
 
-
 i2s_init_:
   #primitive.i2s.init
 
@@ -141,11 +129,8 @@ i2s_create_ resource_group sck_pin ws_pin tx_pin rx_pin mclk_pin sample_rate bit
 i2s_close_ resource_group i2s:
   #primitive.i2s.close
 
-i2s_write_ i2s bytes -> int:
+i2s_write_ i2s samples -> int:
   #primitive.i2s.write
 
-i2s_read_ i2s -> ByteArray:
+i2s_read_ i2s -> List:
   #primitive.i2s.read
-
-i2s_read_to_buffer_ i2s buffer:
-  #primitive.i2s.read_to_buffer

@@ -396,7 +396,6 @@ namespace toit {
   PRIMITIVE(close, 2)                        \
   PRIMITIVE(write, 2)                        \
   PRIMITIVE(read,  1)                        \
-  PRIMITIVE(read_to_buffer, 2)               \
 
 #define MODULE_SPI(PRIMITIVE)                \
   PRIMITIVE(init, 3)                         \
