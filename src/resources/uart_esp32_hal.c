@@ -15,6 +15,7 @@
 
 #if defined(__FREERTOS__)
 
+#include "esp_attr.h"
 #include "uart_esp32_hal.h"
 #include "hal/uart_hal.h"
 
@@ -93,9 +94,9 @@ void uart_toit_hal_set_rx_timeout(uart_hal_handle_t hal, uint8_t timeout) {
 void uart_toit_hal_set_reset_core(uart_hal_handle_t hal, bool reset) {
   uart_hal_set_reset_core(HAL, reset);
 }
-#endif // SOC_UART_REQUIRE_CORE_RESET
+#endif  // SOC_UART_REQUIRE_CORE_RESET
 
-void uart_toit_hal_rxfifo_rst(uart_hal_handle_t hal) {
+void IRAM_ATTR uart_toit_hal_rxfifo_rst(uart_hal_handle_t hal) {
   uart_hal_rxfifo_rst(HAL);
 }
 
@@ -119,7 +120,7 @@ void uart_toit_hal_get_baudrate(uart_hal_handle_t hal, uint32_t *baud_rate) {
   uart_hal_get_baudrate(HAL, baud_rate);
 }
 
-uint32_t uart_toit_hal_get_rxfifo_len(uart_hal_handle_t hal) {
+uint32_t IRAM_ATTR uart_toit_hal_get_rxfifo_len(uart_hal_handle_t hal) {
   return uart_hal_get_rxfifo_len(HAL);
 }
 

@@ -66,8 +66,7 @@ class Bus:
   write bytes/ByteArray -> int:
     while true:
       written := i2s_write_ i2s_ bytes
-      if written != 0:
-        return written
+      if written != 0: return written
 
       state_.clear_state WRITE_STATE_
       state := state_.wait_for_state WRITE_STATE_ | ERROR_STATE_

@@ -211,7 +211,7 @@ PRIMITIVE(init_nor_flash) {
 
 PRIMITIVE(init_nand_flash) {
 #ifdef CONFIG_SPI_FLASH_NAND_ENABLED
-  ARGS(cstring, mount_point, SpiResourceGroup, spi_bus, int, gpio_cs, int, frequency, int, format_if_mount_failed, int, max_files, int, allocation_unit_size);
+  ARGS(cstring, mount_point, SpiResourceGroup, spi_bus, int, gpio_cs, int, frequency, int, format_if_mount_failed, int, max_files, int, allocation_unit_size, bool, erase);
 
   SpiFlashResourceGroup* group;
   HeapObject* error;
@@ -253,6 +253,14 @@ PRIMITIVE(init_nand_flash) {
     return Primitive::os_error(ret, process);
   }
   group->set_nand_flash_device(nand_flash_device);
+
+  if (erase) {
+    ret = spi_nand_erase_chip(nand_flash_device);
+    if (ret != ESP_OK) {
+      group->tear_down();
+      return Primitive::os_error(ret, process);
+    }
+  }
 
   esp_vfs_fat_mount_config_t mount_config = {
       .format_if_mount_failed = static_cast<bool>(format_if_mount_failed),

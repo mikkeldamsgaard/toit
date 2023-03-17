@@ -229,20 +229,18 @@ class Port implements reader.Reader:
   */
   flush -> none:
     while true:
+      if not uart_: throw "CLOSED"
       flushed := uart_wait_tx_ uart_
       if flushed: return
       sleep --ms=1
 
   write_no_wait_ data from=0 to=data.size --break_length=0:
     while true:
-//      print "Wait for write_state $(to-from)"
-      s := state_.wait_for_state WRITE_STATE_
-//      print "got it $(to-from)"
-
+      s := state_.wait_for_state WRITE_STATE_ | ERROR_STATE_
       if not uart_: throw "CLOSED"
       written := uart_write_ uart_ data from to break_length
       if written < to - from:
-        // Not every thing was written, clear write flag and try again
+        // Not everything was written, clear write flag and try again.
         state_.clear_state WRITE_STATE_
         if written == 0: continue
 

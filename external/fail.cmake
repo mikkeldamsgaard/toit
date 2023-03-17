@@ -1,4 +1,4 @@
-# Copyright (C) 2021 Toitware ApS.
+# Copyright (C) 2023 Toitware ApS.
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -13,12 +13,8 @@
 # The license can be found in the file `LICENSE` in the top level
 # directory of this repository.
 
-set(TOIT_FAILING_TESTS
+list(APPEND TOIT_SKIP_TESTS
+  # Requires a setup step.
+  toit-protobuf/tests/all_types_test.toit
+  health-external/downloads/toit-protobuf/tests/all_types_test.toit
 )
-
-if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows" OR "${CMAKE_SYSTEM_NAME}" STREQUAL "MSYS")
-  list(APPEND TOIT_FAILING_TESTS
-    tests/lock_file/basic_test
-    tests/lock_file/multi_test
-  )
-endif()

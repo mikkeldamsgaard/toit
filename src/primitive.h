@@ -237,6 +237,7 @@ namespace toit {
   PRIMITIVE(dump_heap, 1)                    \
   PRIMITIVE(serial_print_heap_report, 2)     \
   PRIMITIVE(get_env, 1)                      \
+  PRIMITIVE(set_env, 2)                      \
   PRIMITIVE(literal_index, 1)                \
   PRIMITIVE(word_size, 0)                    \
   PRIMITIVE(firmware_map, 1)                 \
@@ -324,14 +325,14 @@ namespace toit {
 
 #define MODULE_BLE(PRIMITIVE)                \
   PRIMITIVE(init, 1)                         \
-  PRIMITIVE(create_peripheral_manager, 1)    \
+  PRIMITIVE(create_peripheral_manager, 3)    \
   PRIMITIVE(create_central_manager, 1)       \
   PRIMITIVE(close, 1)                        \
   PRIMITIVE(release_resource, 1)             \
   PRIMITIVE(scan_start, 2)                   \
   PRIMITIVE(scan_next, 1)                    \
   PRIMITIVE(scan_stop, 1)                    \
-  PRIMITIVE(connect, 2)                      \
+  PRIMITIVE(connect, 3)                      \
   PRIMITIVE(disconnect, 1)                   \
   PRIMITIVE(discover_services, 2)            \
   PRIMITIVE(discover_services_result, 1)     \
@@ -346,7 +347,7 @@ namespace toit {
   PRIMITIVE(advertise_start, 7)              \
   PRIMITIVE(advertise_stop, 1)               \
   PRIMITIVE(add_service, 2)                  \
-  PRIMITIVE(add_characteristic, 5)           \
+  PRIMITIVE(add_characteristic, 6)           \
   PRIMITIVE(add_descriptor, 5)               \
   PRIMITIVE(deploy_service, 1)               \
   PRIMITIVE(set_value, 2)                    \
@@ -356,6 +357,8 @@ namespace toit {
   PRIMITIVE(set_preferred_mtu, 1)            \
   PRIMITIVE(get_error, 1)                    \
   PRIMITIVE(gc, 1)                           \
+  PRIMITIVE(read_request_reply, 2)           \
+  PRIMITIVE(get_bonded_peers, 0)             \
 
 #define MODULE_DHCP(PRIMITIVE)               \
   PRIMITIVE(wait_for_lwip_dhcp_on_linux, 0)  \
@@ -586,7 +589,7 @@ namespace toit {
 #define MODULE_SPI_FLASH(PRIMITIVE)          \
   PRIMITIVE(init_sdcard, 6)                  \
   PRIMITIVE(init_nor_flash, 7)               \
-  PRIMITIVE(init_nand_flash, 7)              \
+  PRIMITIVE(init_nand_flash, 8)              \
   PRIMITIVE(close, 1)                        \
 
 #define MODULE_FILE(PRIMITIVE)               \
