@@ -472,7 +472,7 @@ class LocalService extends Resource_ implements Attribute:
     return add_characteristic
         uuid
         --properties=CHARACTERISTIC_PROPERTY_NOTIFY
-        --permissions=CHARACTERISTIC_PERMISSION_READ
+        --permissions=0
 
   /**
   Convenience method to add an indication characteristic with the given $uuid. See $add_characteristic.
@@ -481,7 +481,7 @@ class LocalService extends Resource_ implements Attribute:
     return add_characteristic
         uuid
         --properties=CHARACTERISTIC_PROPERTY_INDICATE
-        --permissions=CHARACTERISTIC_PERMISSION_READ
+        --permissions=0
 
   /**
   Deploys this service.
