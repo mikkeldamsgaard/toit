@@ -471,8 +471,8 @@ class LocalService extends Resource_ implements Attribute:
   add_notification_characteristic uuid/BleUuid -> LocalCharacteristic:
     return add_characteristic
         uuid
-        --properties=CHARACTERISTIC_PROPERTY_NOTIFY
-        --permissions=0
+        --properties=CHARACTERISTIC_PROPERTY_NOTIFY  | CHARACTERISTIC_PROPERTY_READ
+        --permissions=CHARACTERISTIC_PERMISSION_READ
 
   /**
   Convenience method to add an indication characteristic with the given $uuid. See $add_characteristic.
@@ -480,8 +480,8 @@ class LocalService extends Resource_ implements Attribute:
   add_indication_characteristic  uuid/BleUuid  -> LocalCharacteristic:
     return add_characteristic
         uuid
-        --properties=CHARACTERISTIC_PROPERTY_INDICATE
-        --permissions=0
+        --properties=CHARACTERISTIC_PROPERTY_INDICATE | CHARACTERISTIC_PROPERTY_READ
+        --permissions=CHARACTERISTIC_PERMISSION_READ
 
   /**
   Deploys this service.
