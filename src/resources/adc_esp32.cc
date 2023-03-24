@@ -300,12 +300,9 @@ PRIMITIVE(get_many) {
 
     array->at_put(i, Smi::from(adc_reading));
 
-
     next += micro_per_sample;
     while (esp_timer_get_time() < next) ;
   }
-
-
 
   return array;
 }
