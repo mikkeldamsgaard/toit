@@ -277,6 +277,40 @@ PRIMITIVE(get_raw) {
   return Smi::from(adc_reading);
 }
 
+PRIMITIVE(get_many) {
+  ARGS(AdcResource, resource, int, sample_rate, int, samples);
+  if (sample_rate > 25000) INVALID_ARGUMENT;
+  if (samples > 1000) INVALID_ARGUMENT;
+  int micro_per_sample = 1000*1000 / sample_rate;
+
+  Array* array = process->object_heap()->allocate_array(samples, Smi::from(0));
+
+  if (!array) ALLOCATION_FAILED;
+
+  int64 next = esp_timer_get_time();
+  for (int i = 0; i < samples; i++) {
+    int adc_reading;
+    if (resource->unit == ADC_UNIT_1) {
+      adc_reading = adc1_get_raw(static_cast<adc1_channel_t>(resource->chan));
+    } else {
+      esp_err_t err = adc2_get_raw(static_cast<adc2_channel_t>(resource->chan),
+                                   static_cast<adc_bits_width_t>(ADC_WIDTH_BIT_DEFAULT), &adc_reading);
+      if (err != ESP_OK) return Primitive::os_error(err, process);
+    }
+
+    array->at_put(i, Smi::from(adc_reading));
+
+
+    next += micro_per_sample;
+    while (esp_timer_get_time() < next) ;
+  }
+
+
+
+  return array;
+}
+
+
 PRIMITIVE(close) {
   ARGS(AdcResource, resource);
 

@@ -23,6 +23,7 @@ MODULE_TYPES(adc, MODULE_ADC)
 TYPE_PRIMITIVE_ANY(init)
 TYPE_PRIMITIVE_ANY(get)
 TYPE_PRIMITIVE_ANY(get_raw)
+TYPE_PRIMITIVE_ARRAY(get_many)
 TYPE_PRIMITIVE_NULL(close)
 
 }  // namespace toit::compiler

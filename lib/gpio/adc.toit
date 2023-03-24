@@ -89,6 +89,10 @@ class Adc:
     if not raw: throw "INVALID_ARGUMENT"
     return adc_get_raw_ resource_
 
+  get --many/bool --samples/int --sample_rate/int:
+    if not many: throw "INVALID_ARGUMENT"
+    return adc_get_many_ resource_ sample_rate samples
+
   /**
   Closes the ADC unit and releases the associated resources.
   */
@@ -108,3 +112,6 @@ adc_get_raw_ resource:
 
 adc_close_ resource:
   #primitive.adc.close
+
+adc_get_many_ resource sample_rate samples:
+  #primitive.adc.get_many

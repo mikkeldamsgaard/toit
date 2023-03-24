@@ -530,6 +530,7 @@ namespace toit {
   PRIMITIVE(init, 4)                        \
   PRIMITIVE(get, 2)                         \
   PRIMITIVE(get_raw, 1)                     \
+  PRIMITIVE(get_many, 3)                    \
   PRIMITIVE(close, 1)                       \
 
 #define MODULE_DAC(PRIMITIVE)               \
