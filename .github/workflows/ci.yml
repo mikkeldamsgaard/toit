@@ -71,11 +71,11 @@ jobs:
           git submodule update --init components/mbedtls
           git submodule update --init components/esptool_py
 
-      # Use Go 1.17
-      - name: Switch to Go 1.17
+      # Use Go 1.20
+      - name: Switch to Go 1.20
         shell: bash
         run:
-          echo "$GOROOT_1_17_X64"/bin >> $GITHUB_PATH
+          echo "$GOROOT_1_20_X64"/bin >> $GITHUB_PATH
 
       # Get values for cache paths to be used in later steps
       - name: Get Go paths
@@ -214,7 +214,7 @@ jobs:
       - name: Test 32-bit debug
         if: runner.os == 'Linux'
         run: |
-          make HOST=host32 BUILD_TYPE=Debug test
+          make HOST=host32 CROSS_ARCH=host32 BUILD_TYPE=Debug test
 
       # Test external code.
       - name: Test external
@@ -241,7 +241,7 @@ jobs:
           make test-external-health
           if [ "$RUNNER_OS" == "Linux" ]; then
             cmake -DTOIT_TEST_EXTERNAL=ON build/host32
-            make CROSS_ARCH=host32 BUILD_TYPE=Debug rebuild-cross-cmake
+            make HOST=host32 CROSS_ARCH=host32 BUILD_TYPE=Debug rebuild-cross-cmake
             cd build/host32
             ninja check_external
             cd ../..
@@ -276,7 +276,7 @@ jobs:
         # Note that we use `cp -R` first, since that works on every platform.
         run: |
           cp -R ./build/host/sdk ./build/host/toit
-          tar -czf build/${{ steps.constants.outputs.artifact }} -C ./build/host -h --exclude toit/bin/mbedtls toit
+          tar -czf build/${{ steps.constants.outputs.artifact }} -C ./build/host --dereference toit
 
       - name: Prepare debug repros
         if: always()
@@ -348,16 +348,24 @@ jobs:
           gsutil cp LATEST.tmp gs://toit-web/toitdoc-sdk/RELEASED
           gsutil cp LATEST.tmp gs://toit-web/toitdoc-sdk/RELEASED.$TOIT_VERSION
 
-      - name: Upload artifacts
-        if: matrix.shard == 1
+      - name: Upload unsigned artifacts - Windows
+        if: runner.os == 'Windows' && matrix.shard == 1
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ runner.os }}-build-unsigned
+          path: build/${{ steps.constants.outputs.artifact }}
+
+      - name: Upload artifacts - Linux/macOS
+        if: runner.os != 'Windows' && matrix.shard == 1
         uses: actions/upload-artifact@v3
         with:
           name: ${{ runner.os }}-build
           path: build/${{ steps.constants.outputs.artifact }}
 
-      - name: Upload release artifacts
+      - name: Upload release artifacts - Linux/macOS
         if: |
           github.event_name == 'release' &&
+          runner.os != 'Windows' &&
           matrix.shard == 1 &&
           github.repository_owner == 'toitlang'
         uses: svenstaro/upload-release-action@v2
@@ -367,6 +375,46 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
 
+  sign_windows:
+    runs-on: windows-signing
+    needs: [build]
+    if: github.event_name == 'release'
+    steps:
+      - name: Clean workspace
+        run: |
+          rm -Recurse -Force ${{ github.workspace }}\*
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: Windows-build-unsigned
+
+      - name: Decompress
+        run: |
+          & "C:\Program Files\Git\bin\bash.exe" --noprofile --norc -e -o pipefail -c "tar -xzf toit-windows.tar.gz"
+
+      - name: Sign
+        run: |
+          Get-ChildItem toit/bin/*.exe, toit/tools/*.exe | ForEach-Object {
+              signtool sign /debug /n "Toitware ApS" /t http://timestamp.digicert.com/ $_.FullName
+          }
+
+      - name: Compress
+        run: |
+          & "C:\Program Files\Git\bin\bash.exe" --noprofile --norc -e -o pipefail -c "tar -czf toit-windows.tar.gz toit"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Windows-build
+          path: toit-windows.tar.gz
+
+      - name: Upload release artifacts
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: toit-windows.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
 
   # Really annoying that we need to duplicate so much.
   esp32:
@@ -385,11 +433,11 @@ jobs:
           git submodule sync --recursive
           git submodule update --init --recursive -j 16
 
-      # Use Go 1.17
-      - name: Switch to Go 1.17
+      # Use Go 1.20
+      - name: Switch to Go 1.20
         shell: bash
         run:
-          echo "$GOROOT_1_17_X64"/bin >> $GITHUB_PATH
+          echo "$GOROOT_1_20_X64"/bin >> $GITHUB_PATH
 
       # Get values for cache paths to be used in later steps
       - name: Get Go paths
@@ -557,11 +605,11 @@ jobs:
           git submodule update --init components/mbedtls
           git submodule update --init components/esptool_py
 
-      # Use Go 1.17
-      - name: Switch to Go 1.17
+      # Use Go 1.20
+      - name: Switch to Go 1.20
         shell: bash
         run:
-          echo "$GOROOT_1_17_X64"/bin >> $GITHUB_PATH
+          echo "$GOROOT_1_20_X64"/bin >> $GITHUB_PATH
 
       # Get values for cache paths to be used in later steps
       - name: Get Go paths

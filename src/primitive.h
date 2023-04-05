@@ -296,8 +296,6 @@ namespace toit {
   PRIMITIVE(add_root_certificate, 2)         \
   PRIMITIVE(add_certificate, 4)              \
   PRIMITIVE(error, 2)                        \
-  PRIMITIVE(get_session, 1)                  \
-  PRIMITIVE(set_session, 2)                  \
   PRIMITIVE(get_internals, 1)                \
 
 #define MODULE_WIFI(PRIMITIVE)               \
@@ -315,7 +313,7 @@ namespace toit {
   PRIMITIVE(ap_info, 1)                      \
 
 #define MODULE_ETHERNET(PRIMITIVE)           \
-  PRIMITIVE(init_esp32, 5)                   \
+  PRIMITIVE(init_esp32, 6)                   \
   PRIMITIVE(init_spi, 3)                     \
   PRIMITIVE(close, 1)                        \
   PRIMITIVE(connect, 1)                      \
@@ -580,6 +578,7 @@ namespace toit {
   PRIMITIVE(grant_access, 4)                 \
   PRIMITIVE(is_accessed, 2)                  \
   PRIMITIVE(revoke_access, 2)                \
+  PRIMITIVE(partition_find, 3)              \
   PRIMITIVE(region_open, 5)                  \
   PRIMITIVE(region_close, 1)                 \
   PRIMITIVE(region_read, 3)                  \
@@ -815,10 +814,20 @@ namespace toit {
   Object* _raw_##name = __args[-(N)];                   \
   INT64_VALUE_OR_WRONG_TYPE(name, _raw_##name)
 
+// TODO(kasper): Rename this.
 #define _A_T_word(N, name)                \
   Object* _raw_##name = __args[-(N)];     \
   if (!is_smi(_raw_##name)) WRONG_TYPE;   \
   word name = Smi::cast(_raw_##name)->value();
+
+#define _A_T_uword(N, name)                           \
+  Object* _raw_##name = __args[-(N)];                 \
+  uword name;                                         \
+  if (is_smi(_raw_##name)) {                          \
+    name = Smi::cast(_raw_##name)->value();           \
+  } else if (is_large_integer(_raw_##name)) {         \
+    name = LargeInteger::cast(_raw_##name)->value();  \
+  } else WRONG_TYPE;
 
 #define _A_T_double(N, name)                 \
   Object* _raw_##name = __args[-(N)];        \
@@ -830,20 +839,18 @@ namespace toit {
   double name;                                                 \
   if (is_smi(_raw_##name)) {                                   \
     name = (double) Smi::cast(_raw_##name)->value();           \
-  }                                                            \
-  else if (is_large_integer(_raw_##name)) {                    \
+  } else if (is_large_integer(_raw_##name)) {                  \
     name = (double) LargeInteger::cast(_raw_##name)->value();  \
-  }                                                            \
-  else if (is_double(_raw_##name)) {                           \
+  } else if (is_double(_raw_##name)) {                         \
     name = Double::cast(_raw_##name)->value();                 \
   } else WRONG_TYPE;
 
 #define _A_T_bool(N, name)                   \
   Object* _raw_##name = __args[-(N)];        \
   bool name = true;                          \
-  if (_raw_##name == process->program()->true_object()) {}       \
-  else if (_raw_##name == process->program()->false_object()) {  \
-    name = false;                                                \
+  if (_raw_##name == process->program()->true_object()) {         \
+  } else if (_raw_##name == process->program()->false_object()) { \
+    name = false;                                                 \
   } else WRONG_TYPE;
 
 #define _A_T_cstring(N, name)                                           \
@@ -980,7 +987,6 @@ HeapObject* get_absolute_path(Process* process, const wchar_t* pathname, wchar_t
 #define _A_T_EthernetIpEvents(N, name)    MAKE_UNPACKING_MACRO(EthernetIpEvents, N, name)
 #define _A_T_MbedTlsSocket(N, name)       MAKE_UNPACKING_MACRO(MbedTlsSocket, N, name)
 #define _A_T_BaseMbedTlsSocket(N, name)   MAKE_UNPACKING_MACRO(BaseMbedTlsSocket, N, name)
-#define _A_T_SslSession(N, name)          MAKE_UNPACKING_MACRO(SslSession, N, name)
 #define _A_T_X509Certificate(N, name)     MAKE_UNPACKING_MACRO(X509Certificate, N, name)
 #define _A_T_AesContext(N, name)          MAKE_UNPACKING_MACRO(AesContext, N, name)
 #define _A_T_AesCbcContext(N, name)       MAKE_UNPACKING_MACRO(AesCbcContext, N, name)

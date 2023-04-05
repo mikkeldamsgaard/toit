@@ -14,12 +14,14 @@ import system.api.network
 import system.services
   show
     ServiceClient
-    ServiceHandler
+    ServiceHandlerNew
     ServiceProvider
     ServiceResource
     ServiceResourceProxy
 
 class NetworkResourceProxy extends ServiceResourceProxy:
+  on_closed_/Lambda? := null
+
   constructor client/NetworkServiceClient handle/int:
     super client handle
 
@@ -45,6 +47,22 @@ class NetworkResourceProxy extends ServiceResourceProxy:
     client ::= client_ as NetworkServiceClient
     socket ::= client.tcp_listen handle_ port
     return TcpServerSocketResourceProxy_ client socket
+
+  on_closed lambda/Lambda? -> none:
+    if not lambda:
+      on_closed_ = null
+      return
+    if on_closed_: throw "ALREADY_IN_USE"
+    if is_closed: lambda.call
+    else: on_closed_ = lambda
+
+  close_handle_ -> int?:
+    on_closed := on_closed_
+    on_closed_ = null
+    try:
+      return super
+    finally:
+      if on_closed: on_closed.call
 
 // ----------------------------------------------------------------------------
 
@@ -105,13 +123,48 @@ monitor NetworkState:
 // ----------------------------------------------------------------------------
 
 /**
+The $CloseableNetwork is a convenience base class for implementing
+  closeable networks that keep track of a single listener for the
+  on-closed events.
+
+Subclasses must take care to provide an implementation of the $close_
+  method instead of overriding the $close method.
+
+If the language supported mixins, the $CloseableNetwork could be
+  mixed into $NetworkResourceProxy.
+*/
+abstract class CloseableNetwork:
+  on_closed_/Lambda? := null
+
+  abstract is_closed -> bool
+  abstract close_ -> none
+
+  on_closed lambda/Lambda? -> none:
+    if not lambda:
+      on_closed_ = null
+      return
+    if on_closed_: throw "ALREADY_IN_USE"
+    if is_closed: lambda.call
+    else: on_closed_ = lambda
+
+  close -> none:
+    on_closed := on_closed_
+    on_closed_ = null
+    try:
+      close_
+    finally:
+      if on_closed: on_closed.call
+
+// ----------------------------------------------------------------------------
+
+/**
 The $ProxyingNetworkServiceProvider makes it easy to proxy a network
   interface and expose it as a provided service. The service can then
   be used across process boundaries, which makes it possible to run
   network drivers separate from the rest of the system.
 */
 abstract class ProxyingNetworkServiceProvider extends ServiceProvider
-    implements NetworkModule ServiceHandler:
+    implements NetworkModule ServiceHandlerNew:
   state_/NetworkState ::= NetworkState
   network_/net.Interface? := null
 
@@ -143,7 +196,15 @@ abstract class ProxyingNetworkServiceProvider extends ServiceProvider
   */
   abstract close_network network/net.Interface -> none
 
-  handle pid/int client/int index/int arguments/any -> any:
+  /**
+  Requests quarantining the network identified by $name.
+
+  Subclasses may override and act on the request.
+  */
+  quarantine name/string -> none:
+    // Do nothing.
+
+  handle index/int arguments/any --gid/int --client/int -> any:
     if index == NetworkService.SOCKET_READ_INDEX:
       socket ::= convert_to_socket_ client arguments
       return socket.read
@@ -166,6 +227,8 @@ abstract class ProxyingNetworkServiceProvider extends ServiceProvider
       return address (resource client arguments)
     if index == NetworkService.RESOLVE_INDEX:
       return resolve (resource client arguments[0]) arguments[1]
+    if index == NetworkService.QUARANTINE_INDEX:
+      return quarantine arguments
 
     if index == NetworkService.UDP_OPEN_INDEX:
       return udp_open client arguments[1]
@@ -220,16 +283,29 @@ abstract class ProxyingNetworkServiceProvider extends ServiceProvider
     // We use 'this' service definition as the network module, so we get told
     // when the module disconnects as a result of calling $NetworkState.down.
     state_.up: this
-    resource := NetworkResource this client state_
-    return [resource.serialize_for_rpc, proxy_mask]
+    resource := NetworkResource this client state_ --notifiable
+    return [
+      resource.serialize_for_rpc,
+      proxy_mask | NetworkService.PROXY_QUARANTINE,
+      network_.name
+    ]
 
   connect -> none:
-    network_ = open_network
+    network := open_network
+    network.on_closed:: disconnect
+    network_ = network
 
   disconnect -> none:
-    if not network_: return
-    close_network network_
+    network := network_
+    if not network: return
     network_ = null
+    try:
+      close_network network
+    finally:
+      critical_do:
+        resources_do: | resource/ServiceResource |
+          if resource is NetworkResource and not resource.is_closed:
+            resource.notify_ NetworkService.NOTIFY_CLOSED --close
 
   address resource/ServiceResource -> ByteArray:
     return network_.address.to_byte_array

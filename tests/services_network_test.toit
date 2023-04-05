@@ -3,7 +3,6 @@
 // be found in the tests/LICENSE file.
 
 import net
-import net.impl
 import net.tcp
 import writer
 import expect show *
@@ -15,16 +14,16 @@ import system.base.network show ProxyingNetworkServiceProvider
 FAKE_TAG ::= "fake-$(random 1024)"
 FAKE_SELECTOR ::= NetworkService.SELECTOR.restrict.allow --tag=FAKE_TAG
 
-service_/NetworkServiceClient? ::= (NetworkServiceClient FAKE_SELECTOR).open
-    --if_absent=: null
-
 main:
   service := FakeNetworkServiceProvider
   service.install
   test_address service
   test_resolve service
   test_tcp service
+  test_close service
   service.uninstall
+
+  test_report
 
 test_address service/FakeNetworkServiceProvider:
   local_address ::= net.open.address
@@ -84,15 +83,45 @@ test_tcp_network network/net.Interface:
     socket.close
     network.close
 
+test_close service/FakeNetworkServiceProvider:
+  3.repeat:
+    network := open_fake
+    service.network.close
+    yield
+    expect network.is_closed
+  3.repeat:
+    network := open_fake
+    service.disconnect
+    yield
+    expect network.is_closed
+
+test_report:
+  service := FakeNetworkServiceProvider
+  service.install
+  network := open_fake
+  network.quarantine
+  expect service.has_been_quarantined
+  network.close
+
+  // Check that we can quarantine a closed network.
+  expect_not service.has_been_quarantined
+  network.quarantine
+  expect service.has_been_quarantined
+
+  service.uninstall
+
 // --------------------------------------------------------------------------
 
-open_fake -> net.Interface:
-  return impl.SystemInterface_ service_ service_.connect
+open_fake -> net.Client:
+  service := (NetworkServiceClient FAKE_SELECTOR).open as NetworkServiceClient
+  return net.open --service=service
 
 class FakeNetworkServiceProvider extends ProxyingNetworkServiceProvider:
   proxy_mask_/int := 0
   address_/ByteArray? := null
   resolve_/List? := null
+  network/net.Interface? := null
+  quarantined_/bool := false
 
   constructor:
     super "system/network/test" --major=1 --minor=2  // Major and minor versions do not matter here.
@@ -100,19 +129,33 @@ class FakeNetworkServiceProvider extends ProxyingNetworkServiceProvider:
         --handler=this
         --priority=ServiceProvider.PRIORITY_UNPREFERRED
         --tags=[FAKE_TAG]
+        --new
 
   proxy_mask -> int:
     return proxy_mask_
 
   open_network -> net.Interface:
-    return net.open
+    expect_null network
+    network = net.open --name="fake-net"
+    return network
 
   close_network network/net.Interface -> none:
+    expect_identical this.network network
+    this.network = null
     network.close
+
+  quarantine name/string -> none:
+    expect_equals "fake-net" name
+    quarantined_ = true
 
   update_proxy_mask_ mask/int add/bool:
     if add: proxy_mask_ |= mask
     else: proxy_mask_ &= ~mask
+
+  has_been_quarantined -> bool:
+    result := quarantined_
+    quarantined_ = false
+    return result
 
   address= value/ByteArray?:
     update_proxy_mask_ NetworkService.PROXY_ADDRESS (value != null)

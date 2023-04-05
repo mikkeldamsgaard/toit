@@ -13,17 +13,19 @@ import net.udp
 import net.tcp
 import spi
 
+import system.base.network show CloseableNetwork
+
 import .modules.ethernet as ethernet_module
 import .modules.ethernet show
-    MAC_CHIP_ESP32 MAC_CHIP_W5500
-    PHY_CHIP_NONE PHY_CHIP_IP101 PHY_CHIP_LAN8720
+    MAC_CHIP_ESP32 MAC_CHIP_W5500 MAC_CHIP_OPENETH
+    PHY_CHIP_NONE PHY_CHIP_IP101 PHY_CHIP_LAN8720 PHY_CHIP_DP83848
 import .modules.tcp as tcp_module
 import .modules.udp as udp_module
 import .modules.dns as dns_module
 import ..esp32
 
-export MAC_CHIP_ESP32 MAC_CHIP_W5500
-export PHY_CHIP_NONE PHY_CHIP_IP101 PHY_CHIP_LAN8720
+export MAC_CHIP_ESP32 MAC_CHIP_W5500 MAC_CHIP_OPENETH
+export PHY_CHIP_NONE PHY_CHIP_IP101 PHY_CHIP_LAN8720 PHY_CHIP_DP83848
 
 ETHERNET_CONNECT_TIMEOUT_  ::= Duration --s=10
 ETHERNET_DHCP_TIMEOUT_     ::= Duration --s=16
@@ -122,12 +124,15 @@ connect -> net.Interface
 
   return EthernetInterface_
 
-class EthernetInterface_ implements net.Interface:
+class EthernetInterface_ extends CloseableNetwork implements net.Interface:
   static open_count_/int := 0
   open_/bool := true
 
   constructor:
     open_count_++
+
+  name -> string:
+    return "ethernet"
 
   resolve host/string -> List:
     with_ethernet_:
@@ -169,7 +174,7 @@ class EthernetInterface_ implements net.Interface:
   is_closed -> bool:
     return not open_
 
-  close -> none:
+  close_ -> none:
     if not open_: return
     open_ = false
     open_count_--
