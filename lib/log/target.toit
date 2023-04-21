@@ -12,6 +12,7 @@ interface Target:
 
 class DefaultTarget implements Target:
   log level/int message/string names/List? keys/List? values/List? -> none:
+    if level == DEBUG_LEVEL: print "__D: $message"
     service_.log level message names keys values
 
 /**
