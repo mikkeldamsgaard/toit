@@ -624,7 +624,10 @@ PRIMITIVE(init) {
   if (proxy == null) {
     ALLOCATION_FAILED;
   }
-  UartResourceGroup* uart = _new UartResourceGroup(process, EventQueueEventSource::instance());
+  void* mem = heap_caps_malloc(sizeof(UartResourceGroup), MALLOC_CAP_INTERNAL);
+  if (!mem) MALLOC_FAILED;
+
+  UartResourceGroup* uart = new (mem) UartResourceGroup(process, EventQueueEventSource::instance());
   if (!uart) MALLOC_FAILED;
 
   proxy->set_external_address(uart);
