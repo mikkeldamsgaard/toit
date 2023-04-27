@@ -235,14 +235,20 @@ MODULE_IMPLEMENTATION(tls, MODULE_TLS)
 Object* tls_error(MbedTlsResourceGroup* group, Process* process, int err) {
   static const size_t BUFFER_LEN = 400;
   char buffer[BUFFER_LEN];
-  if (err == MBEDTLS_ERR_CIPHER_ALLOC_FAILED ||
-      err == MBEDTLS_ERR_ECP_ALLOC_FAILED ||
-      err == MBEDTLS_ERR_MD_ALLOC_FAILED ||
-      err == MBEDTLS_ERR_MPI_ALLOC_FAILED ||
-      err == MBEDTLS_ERR_PEM_ALLOC_FAILED ||
-      err == MBEDTLS_ERR_PK_ALLOC_FAILED ||
-      err == MBEDTLS_ERR_SSL_ALLOC_FAILED ||
-      err == MBEDTLS_ERR_X509_ALLOC_FAILED) {
+  // For some reason Mbedtls doesn't seem to export this mask.
+  static const int MBED_LOW_LEVEL_ERROR_MASK = 0x7f;
+  // Error codes are negative so we use or-not instead of and.
+  int lo_error = err | ~MBED_LOW_LEVEL_ERROR_MASK;
+  int hi_error = err & ~MBED_LOW_LEVEL_ERROR_MASK;
+  if (hi_error == MBEDTLS_ERR_CIPHER_ALLOC_FAILED ||
+      hi_error == MBEDTLS_ERR_ECP_ALLOC_FAILED ||
+      hi_error == MBEDTLS_ERR_MD_ALLOC_FAILED ||
+      lo_error == MBEDTLS_ERR_MPI_ALLOC_FAILED ||
+      lo_error == MBEDTLS_ERR_ASN1_ALLOC_FAILED ||
+      hi_error == MBEDTLS_ERR_PEM_ALLOC_FAILED ||
+      hi_error == MBEDTLS_ERR_PK_ALLOC_FAILED ||
+      hi_error == MBEDTLS_ERR_SSL_ALLOC_FAILED ||
+      hi_error == MBEDTLS_ERR_X509_ALLOC_FAILED) {
     MALLOC_FAILED;
   }
   if (err == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED &&
@@ -667,5 +673,101 @@ PRIMITIVE(get_random) {
   return process->program()->null_object();
 }
 
+#ifdef TOIT_FREERTOS
+// On small platforms we disallow concurrent handshakes
+// to avoid running into memory issues.
+static const int HANDSHAKE_CONCURRENCY = 1;
+#else
+static const int HANDSHAKE_CONCURRENCY = 16;
+#endif
+
+class TlsHandshakeToken;
+typedef DoubleLinkedList<TlsHandshakeToken> TlsHandshakeTokenList;
+
+// The handshake tokens are used to limit the amount of
+// concurrent TLS handshakes we do. At any time, there
+// can be at most HANDSHAKE_CONCURRENCY tokens with
+// a non-zero state. All zero state tokens are chained
+// together in a waiters list and get a non-zero state
+// one at a time as other tokens are released.
+class TlsHandshakeToken : public Resource, public TlsHandshakeTokenList::Element {
+ public:
+  TAG(TlsHandshakeToken);
+  explicit TlsHandshakeToken(MbedTlsResourceGroup* group)
+      : Resource(group) {
+    TlsHandshakeToken* token = acquire();
+    if (token) {
+      ASSERT(token == this);
+      set_state(1);
+    }
+  }
+
+  ~TlsHandshakeToken() {
+    TlsHandshakeToken* token = release();
+    if (token) {
+      ASSERT(token != this);
+      EventSource* source = token->resource_group()->event_source();
+      source->set_state(token, 1);
+    }
+  }
+
+ private:
+  static Mutex* mutex;
+  static int count;
+  static TlsHandshakeTokenList waiters;
+
+  TlsHandshakeToken* acquire() {
+    Locker locker(OS::global_mutex());
+    if (count > 0) {
+      count--;
+      return this;
+    } else {
+      waiters.append(this);
+      return null;
+    }
+  }
+
+  TlsHandshakeToken* release() {
+    Locker locker(OS::global_mutex());
+    if (waiters.is_linked(this)) {
+      waiters.unlink(this);
+      return null;
+    } else if (waiters.is_empty()) {
+      count++;
+      return null;
+    } else {
+      return waiters.remove_first();
+    }
+  }
+};
+
+Mutex* TlsHandshakeToken::mutex = OS::global_mutex();
+int TlsHandshakeToken::count = HANDSHAKE_CONCURRENCY;
+TlsHandshakeTokenList TlsHandshakeToken::waiters;
+
+PRIMITIVE(token_acquire) {
+  ARGS(MbedTlsResourceGroup, group);
+
+  ByteArray* proxy = process->object_heap()->allocate_proxy();
+  if (proxy == null) ALLOCATION_FAILED;
+
+  TlsHandshakeToken* token = _new TlsHandshakeToken(group);
+  if (!token) MALLOC_FAILED;
+
+  proxy->set_external_address(token);
+  return proxy;
+}
+
+PRIMITIVE(token_release) {
+  ARGS(ByteArray, proxy);
+
+  TlsHandshakeToken* token = proxy->as_external<TlsHandshakeToken>();
+  token->resource_group()->unregister_resource(token);
+  proxy->clear_external_address();
+
+  return process->program()->null_object();
+}
+
 } // namespace toit
+
 #endif // !defined(TOIT_FREERTOS) || CONFIG_TOIT_CRYPTO

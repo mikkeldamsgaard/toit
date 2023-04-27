@@ -37,6 +37,7 @@ uart_hal_handle_t uart_toit_hal_init(uart_port_t port) {
   handle->interrupt_mask[UART_TOIT_INTR_PARITY_ERR]   = UART_INTR_PARITY_ERR;
   handle->interrupt_mask[UART_TOIT_INTR_RXFIFO_OVF]   = UART_INTR_RXFIFO_OVF;
   handle->interrupt_mask[UART_TOIT_INTR_TX_BRK_DONE]  = UART_INTR_TX_BRK_DONE;
+  handle->interrupt_mask[UART_TOIT_INTR_TX_DONE]      = UART_INTR_TX_DONE;
   handle->interrupt_mask[UART_TOIT_ALL_INTR_MASK]     = UART_LL_INTR_MASK;
   handle->interrupt_mask[UART_TOIT_INTR_RX_TIMEOUT]   = UART_INTR_RXFIFO_TOUT;
 
@@ -49,10 +50,10 @@ void uart_toit_hal_deinit(uart_hal_handle_t hal) {
 }
 
 #define HAL (uart_hal_context_t*)hal->hal
+
 void uart_toit_hal_set_tx_idle_num(uart_hal_handle_t hal, uint16_t idle_num) {
   uart_hal_set_tx_idle_num(HAL, idle_num);
 }
-
 
 void uart_toit_hal_set_sclk(uart_hal_handle_t hal, uart_sclk_t sclk) {
   uart_hal_set_sclk(HAL, sclk);
@@ -90,24 +91,6 @@ void uart_toit_hal_set_rx_timeout(uart_hal_handle_t hal, uint8_t timeout) {
   uart_hal_set_rx_timeout(HAL, timeout);
 }
 
-#if SOC_UART_REQUIRE_CORE_RESET
-void uart_toit_hal_set_reset_core(uart_hal_handle_t hal, bool reset) {
-  uart_hal_set_reset_core(HAL, reset);
-}
-#endif  // SOC_UART_REQUIRE_CORE_RESET
-
-void IRAM_ATTR uart_toit_hal_rxfifo_rst(uart_hal_handle_t hal) {
-  uart_hal_rxfifo_rst(HAL);
-}
-
-void uart_toit_hal_txfifo_rst(uart_hal_handle_t hal) {
-  uart_hal_txfifo_rst(HAL);
-}
-
-void IRAM_ATTR uart_toit_hal_tx_break(uart_hal_handle_t hal, uint32_t break_num) {
-  uart_hal_tx_break(HAL, break_num);
-}
-
 void uart_toit_hal_set_mode(uart_hal_handle_t hal, uart_mode_t mode) {
   uart_hal_set_mode(HAL, mode);
 }
@@ -120,11 +103,37 @@ void uart_toit_hal_get_baudrate(uart_hal_handle_t hal, uint32_t *baud_rate) {
   uart_hal_get_baudrate(HAL, baud_rate);
 }
 
+#if SOC_UART_REQUIRE_CORE_RESET
+void uart_toit_hal_set_reset_core(uart_hal_handle_t hal, bool reset) {
+  uart_hal_set_reset_core(HAL, reset);
+}
+#endif  // SOC_UART_REQUIRE_CORE_RESET
+
+void IRAM_ATTR uart_toit_hal_rxfifo_rst(uart_hal_handle_t hal) {
+  uart_hal_rxfifo_rst(HAL);
+}
+
+void IRAM_ATTR uart_toit_hal_txfifo_rst(uart_hal_handle_t hal) {
+  uart_hal_txfifo_rst(HAL);
+}
+
+void IRAM_ATTR uart_toit_hal_tx_break(uart_hal_handle_t hal, uint32_t break_num) {
+  uart_hal_tx_break(HAL, break_num);
+}
+
+bool IRAM_ATTR uart_toit_hal_is_tx_idle(uart_hal_handle_t hal) {
+  return uart_hal_is_tx_idle(HAL);
+}
+
+void IRAM_ATTR uart_toit_hal_set_rts(uart_hal_handle_t hal, bool active) {
+  uart_hal_set_rts(HAL, active ? 0 : 1);
+}
+
 uint32_t IRAM_ATTR uart_toit_hal_get_rxfifo_len(uart_hal_handle_t hal) {
   return uart_hal_get_rxfifo_len(HAL);
 }
 
-uint32_t uart_toit_hal_get_txfifo_len(uart_hal_handle_t hal) {
+uint32_t IRAM_ATTR uart_toit_hal_get_txfifo_len(uart_hal_handle_t hal) {
   return uart_hal_get_txfifo_len(HAL);
 }
 
