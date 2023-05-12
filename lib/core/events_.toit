@@ -49,7 +49,7 @@ monitor ResourceState_:
     // into a situation, where timeouts might be ignored.
     super
 
-  // This method will always either yeild or wait.
+  // This method will always either yield or wait.
   wait_for_state_ bits:
     result := state_ & bits
     if not resource_: return 0
