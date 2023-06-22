@@ -205,7 +205,7 @@ GcType TwoSpaceHeap::collect_new_space(bool try_hard) {
     swap_semi_spaces(*from, *to);
   }
 
-  if (Flags::tracegc) {
+  if (false) {
     uint64 end = OS::get_monotonic_time();
     int f = from_used;
     int t = to_used;
@@ -335,8 +335,8 @@ GcType TwoSpaceHeap::collect_old_space(bool force_compact) {
           ne >> 10);
     }
 
-    printf("%p Mark-sweep%s: %d%c->%d%c%s%s %dus\n",
-        process_heap_->owner(),
+    printf("%d Mark-sweep%s: %d%c->%d%c%s%s %dus\n",
+        process_heap_->owner()->id(),
         compacted ? "-compact" : "",
         (f >> 10) ? (f >> 10) : f,
         (f >> 10) ? 'k' : 'b',
