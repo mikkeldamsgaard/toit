@@ -211,7 +211,6 @@ class Task_ implements Task:
   // Mark the task for cancellation, at the next idle operation.
   cancel -> none:
     is_canceled_ = true
-    print_ "monitor is $monitor_, critical_count_ = $critical_count_"
     if monitor_ and critical_count_ == 0: monitor_.notify_
 
   is_canceled -> bool: return is_canceled_
