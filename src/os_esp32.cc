@@ -326,7 +326,7 @@ bool Thread::spawn(int stack_size, int core) {
     name_,
     stack_size,
     this,
-    tskIDLE_PRIORITY + 1+priority,  // We want to be scheduled before IDLE, but still after WiFi, etc.
+    tskIDLE_PRIORITY + 1 + priority,  // We want to be scheduled before IDLE, but still after WiFi, etc.
     &thread->handle,
     core);
   if (res != pdPASS) {
