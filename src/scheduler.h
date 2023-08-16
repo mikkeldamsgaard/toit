@@ -37,7 +37,7 @@ class SchedulerThread : public Thread, public SchedulerThreadList::Element {
  public:
   explicit SchedulerThread(Scheduler* scheduler)
       : Thread("Toit")
-      , scheduler_(scheduler) {}
+      , scheduler_(scheduler) { priority = 16; }
 
   ~SchedulerThread() {}
 
@@ -161,6 +161,7 @@ class Scheduler {
 
   void iterate_process_chunks(void* context, process_chunk_callback_t callback);
 
+
  private:
   // Introduce a new process to the scheduler. The scheduler will not terminate until
   // all processes has completed.
@@ -197,6 +198,8 @@ class Scheduler {
   scheduler_err_t send_system_message(Locker& locker, SystemMessage* message);
 
   void terminate_execution(Locker& locker, ExitState exit);
+
+  ProcessGroupList& groups() { return groups_; }
 
   Scheduler::ExitState launch_program(Locker& locker, Process* process);
 
@@ -271,6 +274,7 @@ class Scheduler {
   ProcessGroupList groups_;
 
   friend class Process;
+  friend class Mutex;
 };
 
 } // namespace toit
