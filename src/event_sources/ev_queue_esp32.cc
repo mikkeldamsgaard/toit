@@ -45,7 +45,7 @@ EventQueueEventSource::EventQueueEventSource()
   SystemEventSource::instance()->run([&]() -> void {
     FATAL_IF_NOT_ESP_OK(gpio_install_isr_service(ESP_INTR_FLAG_IRAM));
   });
-
+  priority = 17;
   // Create OS thread to handle events.
   spawn();
 

@@ -65,36 +65,50 @@ process_messages_:
   try:
     while task_has_messages_:
       message := task_receive_message_
-      if message is __Monitor__:
-        message.notify_
-        continue
-      else if not message:
-        // Under certain conditions messages can be canceled while
-        // enqueued. Such messages are returned as null. Skip them.
-        continue
+      start := Time.monotonic_us
+      try:
+        if message is __Monitor__:
+          message.notify_
+          continue
+        else if not message:
+          // Under certain conditions messages can be canceled while
+          // enqueued. Such messages are returned as null. Skip them.
+          continue
 
-      // The message processing can be called on a canceled task
-      // when it is terminating. We need to make sure that the
-      // handler code can run even in that case, so we do it in
-      // a critical section and we do not care about the current
-      // task's deadline if any.
-      critical_do --no-respect_deadline:
-        if message is Array_:
-          type := message[0]
-          if type == SYSTEM_RPC_REQUEST_ or type == SYSTEM_RPC_REPLY_:
-            MessageProcessor_.invoke_handler type message
+        // The message processing can be called on a canceled task
+        // when it is terminating. We need to make sure that the
+        // handler code can run even in that case, so we do it in
+        // a critical section and we do not care about the current
+        // task's deadline if any.
+        critical_do --no-respect_deadline:
+          if message is Array_:
+            type := message[0]
+            if type == SYSTEM_RPC_REQUEST_ or type == SYSTEM_RPC_REPLY_:
+              MessageProcessor_.invoke_handler type message
+            else:
+              processor := message_processor_
+              if not processor.run message:
+                processor = MessageProcessor_ message
+                message_processor_ = processor
+              processor.detach_if_not_done_
+          else if message is Lambda:
+            pending_finalizers_.add message
           else:
-            processor := message_processor_
-            if not processor.run message:
-              processor = MessageProcessor_ message
-              message_processor_ = processor
-            processor.detach_if_not_done_
-        else if message is Lambda:
-          pending_finalizers_.add message
-        else:
-          assert: false
+            assert: false
+      finally:
+        if Process.current.priority == Process.PRIORITY_CRITICAL:
+          elapsed := Time.monotonic_us - start
+          if elapsed > 7500:
+            print_ "!!!! Slow processing $elapsed, $(to_log message)"
+
   finally:
     is_processing_messages_ = false
+
+to_log message:
+  if message is __Monitor__: return "mon"
+  if message is Array_: return message
+  if message is Lambda: return "lambda"
+  return "unknown: $message"
 
 monitor MessageProcessor_:
   static IDLE_TIME_MS /int ::= 100
