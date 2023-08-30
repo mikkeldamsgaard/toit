@@ -129,8 +129,7 @@ class Mutex {
  public:
   Mutex(int level, const char* name)
     : level_(level)
-    , sem_(xSemaphoreCreateMutex())
-    , name_(name) {
+    , sem_(xSemaphoreCreateMutex()) {
     if (!sem_) FATAL("Failed allocating mutex semaphore")
   }
 
@@ -142,40 +141,12 @@ class Mutex {
     if (xSemaphoreTake(sem_, portMAX_DELAY) != pdTRUE) {
       FATAL("Mutex lock failed");
     }
-    take_time = esp_timer_get_time();
   }
 
   void unlock() {
-    int64 lock_time = esp_timer_get_time() - take_time;
     if (xSemaphoreGive(sem_) != pdTRUE) {
       FATAL("Mutex unlock failed");
     }
-    Thread::ensure_system_thread();
-    Thread* thread = Thread::current();
-    if (lock_time >= 10000) {
-      Process* current_process = null;
-      for (auto group: VM::current()->scheduler()->groups()) {
-        for (auto process : group->processes()) {
-          if (process->scheduler_thread() == thread) {
-            current_process = process;
-          }
-        }
-      };
-      int prio = -1;
-      int pid = -1;
-      if (current_process) {
-        prio = current_process->priority();
-        pid = current_process->id();
-      }
-      if (prio != Process::PRIORITY_CRITICAL) {
-        esp_rom_printf("Long lock: %llu (pid=%d, prio=%d) %s\n", lock_time, pid, prio, name());
-        if (!strcmp("Scheduler", name()) || !strcmp("Scheduler mutex", name())) {
-          esp_backtrace_print(10);
-        }
-      }
-//    esp_backtrace_print(10);
-    }
-
   }
 
   bool is_locked() {
@@ -184,13 +155,8 @@ class Mutex {
 
   int level() const { return level_; }
 
-  const char* name() const { return name_; }
-
   int level_;
   SemaphoreHandle_t sem_;
-  const char* name_;
-  int64 take_time = 0;
-
 };
 
 // Inspired by pthread_cond_t impl on esp32-idf.
@@ -301,7 +267,6 @@ void Locker::enter() {
   // to update the locker.
   previous_ = thread->locker_;
   thread->locker_ = this;
-
 }
 
 const int DEFAULT_STACK_SIZE = 2 * KB;

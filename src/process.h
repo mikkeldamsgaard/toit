@@ -22,9 +22,7 @@
 #include "profiler.h"
 #include "resource.h"
 #include "snapshot_bundle.h"
-#ifdef TOIT_FREERTROS
-#include "esp_timer.h"
-#endif
+
 namespace toit {
 
 // Process is linked into two different linked lists, so we have to make
@@ -149,14 +147,6 @@ class Process : public ProcessListFromProcessGroup::Element,
   SchedulerThread* scheduler_thread() { return scheduler_thread_; }
   void set_scheduler_thread(SchedulerThread* scheduler_thread) {
     scheduler_thread_ = scheduler_thread;
-#ifdef TOIT_FREERTROS
-    if (scheduler_thread == null) {
-      last_schedule_timestamp_ = esp_timer_get_time();
-    } else if (last_schedule_timestamp_ != 0 && esp_timer_get_time() - last_schedule_timestamp_ > 10000 && priority_ == PRIORITY_CRITICAL) {
-      esp_rom_printf("Missing scheduling: %lu\n",esp_timer_get_time() - last_schedule_timestamp_);
-    }
-#endif
-
   }
 
   void signal(Signal signal);
@@ -290,7 +280,7 @@ class Process : public ProcessListFromProcessGroup::Element,
 #else
   int current_directory_;
 #endif
-  uint64 last_schedule_timestamp_ = 0;
+
   uint32_t signals_;
   State state_;
   SchedulerThread* scheduler_thread_;
