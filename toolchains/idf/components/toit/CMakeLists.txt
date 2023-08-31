@@ -111,17 +111,17 @@ function(toit_postprocess)
             POST_BUILD
             COMMAND rm -f firmware.envelope
             COMMAND "${FIRMWARE_BIN}"
-                    "--envelope=firmware.envelope"
+                    "--envelope=${CMAKE_BINARY_DIR}/firmware.envelope"
                     "create"
-                    "--bootloader.bin=bootloader/bootloader.bin"
-                    "--firmware.bin=${EXECUTABLE_NAME}.bin"
-                    "--firmware.elf=${EXECUTABLE_NAME}.elf"
-                    "--partitions.bin=partition_table/partition-table.bin"
+                    "--bootloader.bin=${CMAKE_BINARY_DIR}/bootloader/bootloader.bin"
+                    "--firmware.bin=${CMAKE_BINARY_DIR}/${EXECUTABLE_NAME}.bin"
+                    "--firmware.elf=${CMAKE_BINARY_DIR}/${EXECUTABLE_NAME}.elf"
+                    "--partitions.bin=${CMAKE_BINARY_DIR}/partition_table/partition-table.bin"
                     "--partitions.csv=${CMAKE_HOME_DIRECTORY}/partitions.csv"
-                    "--otadata.bin=ota_data_initial.bin"
-                    "--flashing.json=flasher_args.json"
+                    "--otadata.bin=${CMAKE_BINARY_DIR}/ota_data_initial.bin"
+                    "--flashing.json=${CMAKE_BINARY_DIR}/flasher_args.json"
                     "--system.snapshot=${SYSTEM_SNAPSHOT}"
-            COMMAND echo envelope: created
+            COMMAND echo envelope: created ${CMAKE_BINARY_DIR}/firmware.envelope
     )
 
     if (CONFIG_TOIT_WIFI_SSID AND CONFIG_TOIT_WIFI_PASSWORD)
@@ -129,9 +129,9 @@ function(toit_postprocess)
                 TARGET firmware
                 POST_BUILD
                 COMMAND "${FIRMWARE_BIN}"
-                        "--envelope=firmware.envelope"
+                        "--envelope=${CMAKE_BINARY_DIR}/firmware.envelope"
                         "property" "set" "wifi" "'{\"wifi.ssid\":\"${CONFIG_TOIT_WIFI_SSID}\",\"wifi.password\":\"${CONFIG_TOIT_WIFI_PASSWORD}\"}'"
-                COMMAND echo envelope: set wifi
+                COMMAND echo envelope: set wifi in ${CMAKE_BINARY_DIR}/firmware.envelope
         )
     endif()
 
@@ -150,21 +150,21 @@ function(toit_postprocess)
             add_custom_command(
                     TARGET firmware
                     POST_BUILD
-                    COMMAND "${ASSETS_BIN}" "--assets=entry_assets.bin" create
-                    COMMAND "${ASSETS_BIN}" "--assets=entry_assets.bin" "add" "--format" "tison"
+                    COMMAND "${ASSETS_BIN}" "--assets=${CMAKE_BINARY_DIR}/entry_assets.bin" create
+                    COMMAND "${ASSETS_BIN}" "--assets=${CMAKE_BINARY_DIR}/entry_assets.bin" "add" "--format" "tison"
                             ${ASSET_NAME} ${RUN_PROGRAM_ASSETS_FILE}
-                    COMMAND echo envelope: asset for program created
+                    COMMAND echo envelope: asset for program created ${CMAKE_BINARY_DIR}/entry_assets.bin
             )
-            set(ENTRY_ASSETS_ARGS "--assets" "entry_assets.bin")
+            set(ENTRY_ASSETS_ARGS "--assets" "${CMAKE_BINARY_DIR}/entry_assets.bin")
         endif()
 
         add_custom_command(
                 TARGET firmware
                 POST_BUILD
                 COMMAND "${TOITC}" "-w" "${CMAKE_BINARY_DIR}/program.snapshot" ${ENTRY_PROJECT_ROOT_ARGS} ${RUN_PROGRAM}
-                COMMAND "${FIRMWARE_BIN}" "--envelope=firmware.envelope"
+                COMMAND "${FIRMWARE_BIN}" "--envelope=${CMAKE_BINARY_DIR}/firmware.envelope"
                         "container" "install" ${ENTRY_ASSETS_ARGS} "program" ${CMAKE_BINARY_DIR}/program.snapshot
-                COMMAND echo envelope: program added
+                COMMAND echo envelope: program added to ${CMAKE_BINARY_DIR}/firmware.envelope
         )
     endif()
 
@@ -172,9 +172,9 @@ function(toit_postprocess)
             TARGET firmware
             POST_BUILD
             COMMAND "${FIRMWARE_BIN}"
-                    "--envelope=firmware.envelope"
-                    "extract" "--format=binary" "-o" "${EXECUTABLE_NAME}-firmware.bin"
-            COMMAND echo envelope: firmware extracted
+                    "--envelope=${CMAKE_BINARY_DIR}/firmware.envelope"
+                    "extract" "--format=binary" "-o" "${CMAKE_BINARY_DIR}/${EXECUTABLE_NAME}-firmware.bin"
+            COMMAND echo envelope: firmware extracted from ${CMAKE_BINARY_DIR}/firmware.envelope to ${CMAKE_BINARY_DIR}/${EXECUTABLE_NAME}-firmware.bin
     )
 
     add_custom_target(mod_flash_args DEPENDS firmware)
