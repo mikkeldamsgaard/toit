@@ -187,7 +187,7 @@ void Thread::_boot() {
   entry();
 }
 
-bool Thread::spawn(int stack_size, int core) {
+bool Thread::spawn(int stack_size, int core, void* dummy) {
   int result = pthread_create(reinterpret_cast<pthread_t*>(&handle_), null, &thread_start, void_cast(this));
   if (result != 0) {
     FATAL("pthread_create failed");
