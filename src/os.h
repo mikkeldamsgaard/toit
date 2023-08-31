@@ -81,7 +81,7 @@ class Thread {
   static void ensure_system_thread();
 
   // Returns true for success, false for malloc failure.
-  bool spawn(int stack_size = 0, int core = -1);
+  bool spawn(int stack_size = 0, int core = -1, void* preallocated_stack = null);
   void run();  // Run on current thread.
 
   void join();

@@ -277,9 +277,14 @@ const int DEFAULT_STACK_SIZE = 2 * KB;
 //   https://gcc.gnu.org/onlinedocs/gcc-5.5.0/gcc/Thread-Local.html#Thread-Local
 __thread Thread* current_thread_ = null;
 
-struct ThreadData {
-  TaskHandle_t handle;
+class ThreadData {
+ public:
+  ~ThreadData() {
+    if (is_static && handle) free(handle);
+  }
+  TaskHandle_t handle = null;
   SemaphoreHandle_t terminated;
+  bool is_static = false;
 };
 
 Thread::Thread(const char* name)
@@ -307,7 +312,7 @@ void Thread::_boot() {
   vTaskDelete(null);
 }
 
-bool Thread::spawn(int stack_size, int core) {
+bool Thread::spawn(int stack_size, int core, void* preallocated_stack) {
   HeapTagScope scope(ITERATE_CUSTOM_TAGS + THREAD_SPAWN_MALLOC_TAG);
   ThreadData* thread = _new ThreadData();
   if (thread == null) return false;
@@ -321,18 +326,41 @@ bool Thread::spawn(int stack_size, int core) {
   if (stack_size == 0) stack_size = DEFAULT_STACK_SIZE;
   if (core == -1) core = tskNO_AFFINITY;
 
-  BaseType_t res = xTaskCreatePinnedToCore(
-    esp_thread_start,
-    name_,
-    stack_size,
-    this,
-    tskIDLE_PRIORITY + 1 + priority,  // We want to be scheduled before IDLE, but still after WiFi, etc.
-    &thread->handle,
-    core);
-  if (res != pdPASS) {
-    vSemaphoreDelete(thread->terminated);
-    delete thread;
-    return false;
+
+  if (preallocated_stack) {
+    thread->handle = heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL);
+    thread->is_static = true;
+    TaskHandle_t handle = xTaskCreateStaticPinnedToCore(
+        esp_thread_start,
+        name_,
+        stack_size,
+        this,
+        tskIDLE_PRIORITY + 1 + priority,
+        static_cast<StackType_t*>(preallocated_stack),
+        static_cast<StaticTask_t*>(thread->handle),
+        core);
+    if (handle == null) {
+      vSemaphoreDelete(thread->terminated);
+      delete thread;
+      return false;
+    }
+    assert(handle == thread->handle);
+
+  } else {
+    BaseType_t res = xTaskCreatePinnedToCore(
+        esp_thread_start,
+        name_,
+        stack_size,
+        this,
+        tskIDLE_PRIORITY + 1 + priority,  // We want to be scheduled before IDLE, but still after WiFi, etc.
+        &thread->handle,
+        core);
+    if (res != pdPASS) {
+      vSemaphoreDelete(thread->terminated);
+      delete thread;
+      return false;
+    }
+
   }
   return true;
 }
