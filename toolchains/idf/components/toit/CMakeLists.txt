@@ -150,19 +150,19 @@ function(toit_postprocess)
             add_custom_command(
                     TARGET firmware
                     POST_BUILD
-                    COMMAND "${ASSETS_BIN}" "--assets=entry_assets.bin" create
-                    COMMAND "${ASSETS_BIN}" "--assets=entry_assets.bin" "add" "--format" "tison"
+                    COMMAND "${ASSETS_BIN}" "--assets=${CMAKE_BINARY_DIR}/entry_assets.bin" create
+                    COMMAND "${ASSETS_BIN}" "--assets=${CMAKE_BINARY_DIR}/entry_assets.bin" "add" "--format" "tison"
                             ${ASSET_NAME} ${RUN_PROGRAM_ASSETS_FILE}
                     COMMAND echo envelope: asset for program created
             )
-            set(ENTRY_ASSETS_ARGS "--assets" "entry_assets.bin")
+            set(ENTRY_ASSETS_ARGS "--assets" "${CMAKE_BINARY_DIR}/entry_assets.bin")
         endif()
 
         add_custom_command(
                 TARGET firmware
                 POST_BUILD
                 COMMAND "${TOITC}" "-w" "${CMAKE_BINARY_DIR}/program.snapshot" ${ENTRY_PROJECT_ROOT_ARGS} ${RUN_PROGRAM}
-                COMMAND "${FIRMWARE_BIN}" "--envelope=firmware.envelope"
+                COMMAND "${FIRMWARE_BIN}" "--envelope=${CMAKE_BINARY_DIR}/firmware.envelope"
                         "container" "install" ${ENTRY_ASSETS_ARGS} "program" ${CMAKE_BINARY_DIR}/program.snapshot
                 COMMAND echo envelope: program added
         )
@@ -172,8 +172,8 @@ function(toit_postprocess)
             TARGET firmware
             POST_BUILD
             COMMAND "${FIRMWARE_BIN}"
-                    "--envelope=firmware.envelope"
-                    "extract" "--format=binary" "-o" "${EXECUTABLE_NAME}-firmware.bin"
+                    "--envelope=${CMAKE_BINARY_DIR}/firmware.envelope"
+                    "extract" "--format=binary" "-o" "${CMAKE_BINARY_DIR}/${EXECUTABLE_NAME}-firmware.bin"
             COMMAND echo envelope: firmware extracted
     )
 
