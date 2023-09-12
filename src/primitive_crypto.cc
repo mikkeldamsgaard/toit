@@ -15,7 +15,6 @@
 
 #include "top.h"
 
-#if !defined(TOIT_FREERTOS) || defined(CONFIG_TOIT_CRYPTO)
 
 #include "mbedtls/gcm.h"
 #include "mbedtls/chachapoly.h"
@@ -128,6 +127,25 @@ PRIMITIVE(sha_get) {
   return result;
 }
 
+#if defined(TOIT_FREERTOS) && !defined(CONFIG_TOIT_CRYPTO)
+PRIMITIVE(siphash_start) { UNIMPLEMENTED(); }
+PRIMITIVE(siphash_clone) { UNIMPLEMENTED(); }
+PRIMITIVE(siphash_add) { UNIMPLEMENTED(); }
+PRIMITIVE(siphash_get) { UNIMPLEMENTED(); }
+PRIMITIVE(aead_init) { UNIMPLEMENTED(); }
+PRIMITIVE(aead_close) { UNIMPLEMENTED(); }
+PRIMITIVE(aead_start_message) { UNIMPLEMENTED(); }
+PRIMITIVE(aead_add) { UNIMPLEMENTED(); }
+PRIMITIVE(aead_get_tag_size) { UNIMPLEMENTED(); }
+PRIMITIVE(aead_finish) { UNIMPLEMENTED(); }
+PRIMITIVE(aead_verify) { UNIMPLEMENTED(); }
+PRIMITIVE(aes_init) { UNIMPLEMENTED(); }
+PRIMITIVE(aes_cbc_crypt) { UNIMPLEMENTED(); }
+PRIMITIVE(aes_ecb_crypt) { UNIMPLEMENTED(); }
+PRIMITIVE(aes_cbc_close) { UNIMPLEMENTED(); }
+PRIMITIVE(aes_ecb_close) { UNIMPLEMENTED(); }
+
+#else
 PRIMITIVE(siphash_start) {
   ARGS(SimpleResourceGroup, group, Blob, key, int, output_length, int, c_rounds, int, d_rounds);
   if (output_length != 8 && output_length != 16) INVALID_ARGUMENT;
@@ -658,7 +676,7 @@ PRIMITIVE(aes_ecb_close) {
   context_proxy->clear_external_address();
   return process->program()->null_object();
 }
+#endif
 
 }
 
-#endif

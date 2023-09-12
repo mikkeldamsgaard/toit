@@ -223,6 +223,25 @@ class Port implements reader.Reader:
         state_.clear_state READ_STATE_
 
   /**
+  Reads data from the port using a supplied $buffer.
+
+  This method blocks until data is available.
+
+  Returns null if closed otherwise it returns the bytes read.
+  */
+  read buffer/ByteArray -> int?:
+    while true:
+      state_bits := state_.wait_for_state READ_STATE_ | ERROR_STATE_
+      if not uart_: return null
+      if state_bits & ERROR_STATE_ != 0:
+        state_.clear_state ERROR_STATE_
+        errors++
+      else if state_bits & READ_STATE_ != 0:
+        read := uart_read_to_buffer_ uart_ buffer
+        if read and read > 0: return read
+        state_.clear_state READ_STATE_
+
+  /**
   Flushes the output buffer, waiting until all written data has been transmitted.
 
   Often, one can just use the `--wait` flag of the $write function instead.
@@ -339,6 +358,9 @@ uart_wait_tx_ uart:
 
 uart_read_ uart:
   #primitive.uart.read
+
+uart_read_to_buffer_ uart buffer:
+  #primitive.uart.read_to_buffer
 
 uart_set_control_flags_ uart flags:
   #primitive.uart.set_control_flags

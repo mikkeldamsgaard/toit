@@ -443,6 +443,10 @@ PRIMITIVE(read) {
   return data;
 }
 
+PRIMITIVE(read_to_buffer) {
+  UNIMPLEMENTED_PRIMITIVE;
+}
+
 PRIMITIVE(set_control_flags) {
   ARGS(IntResource, resource, int, flags);
   int fd = resource->id();

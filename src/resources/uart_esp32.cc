@@ -966,6 +966,19 @@ PRIMITIVE(read) {
   return data;
 }
 
+PRIMITIVE(read_to_buffer) {
+  ARGS(UartResource, uart, Blob, data)
+
+  RxBuffer* buffer = uart->rx_buffer();
+  uword available = buffer->available();
+  if (available == 0) return Smi::from(0);
+
+  uword to_read = Utils::min(static_cast<uword>(data.length()), available);
+  buffer->read(uart, const_cast<uint8*>(data.address()), to_read);
+
+  return Smi::from(static_cast<word>(to_read));
+}
+
 PRIMITIVE(set_control_flags) {
   UNIMPLEMENTED_PRIMITIVE;
 }

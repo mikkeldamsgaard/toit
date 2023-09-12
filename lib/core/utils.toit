@@ -501,7 +501,9 @@ Produces a histogram of object types and their memory
   the console.
 */
 print_objects marker/string="" gc/bool=true:
-  full_gcs := (process_stats)[STATS_INDEX_FULL_GC_COUNT]
+  full_gcs := -1
+  if gc:
+    full_gcs = (process_stats)[STATS_INDEX_FULL_GC_COUNT]
   encoded_histogram := object_histogram_ marker full_gcs
   send_trace_message encoded_histogram
 
