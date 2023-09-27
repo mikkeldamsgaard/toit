@@ -1122,25 +1122,36 @@ bool BleCharacteristicResource::update_subscription_status(uint8_t indicate, uin
   return true;
 }
 
+static int do_start_advertising(BlePeripheralManagerResource* peripheral_manager) {
+  return ble_gap_adv_start(
+      BLE_OWN_ADDR_PUBLIC,
+      null,
+      BLE_HS_FOREVER,
+      &peripheral_manager->advertising_params(),
+      BlePeripheralManagerResource::on_gap,
+      peripheral_manager);
+}
+
 int BlePeripheralManagerResource::_on_gap(struct ble_gap_event* event) {
   switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
       if (advertising_started()) {
         // NimBLE stops advertising on connection event. To keep the library consistent
         // with other platforms the advertising is restarted.
-        int err = ble_gap_adv_start(
-            BLE_OWN_ADDR_PUBLIC,
-            null,
-            BLE_HS_FOREVER,
-            &advertising_params(),
-            BlePeripheralManagerResource::on_gap,
-            this);
-        if (err != BLE_ERR_SUCCESS) {
+        int err = do_start_advertising(this);
+        if (err != BLE_ERR_SUCCESS && err != BLE_HS_ENOMEM) {
           ESP_LOGW("BLE", "Could not restart advertising: err=%d", err);
         }
       }
 
       break;
+    case BLE_GAP_EVENT_DISCONNECT:
+      if (advertising_started() && !ble_gap_adv_active()) {
+        int err = do_start_advertising(this);
+        if (err != BLE_ERR_SUCCESS) {
+          ESP_LOGW("BLE", "Could not restart advertising: err=%d", err);
+        }
+      }
     case BLE_GAP_EVENT_ADV_COMPLETE:
       // TODO(mikkel) Add stopped event.
       //BleEventSource::instance()->on_event(this, kBleAdvertiseStopped);
@@ -1930,13 +1941,7 @@ PRIMITIVE(advertise_start) {
   peripheral_manager->advertising_params().itvl_min = advertising_interval;
   peripheral_manager->advertising_params().itvl_max = advertising_interval;
 
-  err = ble_gap_adv_start(
-      BLE_OWN_ADDR_PUBLIC,
-      null,
-      BLE_HS_FOREVER,
-      &peripheral_manager->advertising_params(),
-      BlePeripheralManagerResource::on_gap,
-      peripheral_manager);
+  err = do_start_advertising(peripheral_manager);
   if (err != BLE_ERR_SUCCESS) {
     return nimle_stack_error(process,err);
   }
