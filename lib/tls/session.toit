@@ -220,9 +220,12 @@ class Session:
         // Connected.
         return
       finally: | is_exception exception |
-        value := is_exception ? exception.value : null
-        handshake_in_progress_.set value --exception=is_exception
-        handshake_in_progress_ = null
+        // If the task that is doing the handshake gets canceled,
+        // we have to be careful and clean up anyway.
+        critical_do:
+          value := is_exception ? exception.value : null
+          handshake_in_progress_.set value --exception=is_exception
+          handshake_in_progress_ = null
 
     tls_group := is_server ? tls_group_server_ : tls_group_client_
 
@@ -255,34 +258,37 @@ class Session:
       handshake_ tls_state --session_state=session_state
 
     finally: | is_exception exception |
-      if token_state: token_state.dispose
-      if tls_state: tls_state.dispose
-      if is_exception: reader_ = null
+      // If the task that is doing the handshake gets canceled,
+      // we have to be careful and clean up anyway.
+      critical_do:
+        if token_state: token_state.dispose
+        if tls_state: tls_state.dispose
+        if is_exception: reader_ = null
 
-      if is_exception or symmetric_session_ != null:
-        // We do not need the resources any more. Either
-        // because we're running in Toit mode using a
-        // symmetric session or because we failed to do
-        // the handshake.
-        if tls: tls_close_ tls
-        tls_group.unuse
-        tls_ = null
-      else:
-        // Delay the closing of the TLS group and resource
-        // until $close is called.
-        tls_group_ = tls_group
-        add_finalizer this:: close
+        if is_exception or symmetric_session_ != null:
+          // We do not need the resources any more. Either
+          // because we're running in Toit mode using a
+          // symmetric session or because we failed to do
+          // the handshake.
+          if tls: tls_close_ tls
+          tls_group.unuse
+          tls_ = null
+        else:
+          // Delay the closing of the TLS group and resource
+          // until $close is called.
+          tls_group_ = tls_group
+          add_finalizer this:: close
 
-      // Release the handshake token if we managed to
-      // create the resource group.
-      if token: tls_token_release_ token
+        // Release the handshake token if we managed to
+        // create the resource group.
+        if token: tls_token_release_ token
 
-      // Mark the handshake as no longer in progress and
-      // send back any exception to whoever may be waiting
-      // for the handshake to complete.
-      handshake_in_progress_.set (is_exception ? exception : null)
-          --exception=is_exception
-      handshake_in_progress_ = null
+        // Mark the handshake as no longer in progress and
+        // send back any exception to whoever may be waiting
+        // for the handshake to complete.
+        handshake_in_progress_.set (is_exception ? exception : null)
+            --exception=is_exception
+        handshake_in_progress_ = null
 
   handshake_ tls_state/monitor.ResourceState_ --session_state/ByteArray?=null -> none:
     root_certificates.do: tls_add_root_certificate_ tls_ it.res_
