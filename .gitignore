@@ -29,3 +29,5 @@ tedi_test.go
 
 /toolchains/esp32*/sdkconfig
 /toolchains/esp32*/sdkconfig.old
+
+.DS_Store
