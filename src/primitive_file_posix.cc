@@ -162,6 +162,7 @@ PRIMITIVE(open) {
     INVALID_ARGUMENT;
   }
   closer.clear();
+
   return Smi::from(fd);
 }
 
