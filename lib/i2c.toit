@@ -53,7 +53,7 @@ class Bus:
   */
   scan -> Set:
     result := {}
-    for i := 0x08; i < 0x78; i++:
+    for i := 0x04; i < 0x78; i++:
       if test i: result.add i
     return result
 
